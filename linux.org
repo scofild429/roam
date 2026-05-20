@@ -2,2661 +2,911 @@
 :ID:       E679EB60-C52C-4489-8164-5892DE601136
 :END:
 #+TITLE: Linux
-#+OPTIONS: num:t
-#+startup: content
-#+EXPORT_FILE_NAME: /home/si/Dropbox/Base/html/Linux.html
-#+PROPERTY: header-args :eval no-export
-#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="https://gongzhitaao.org/orgcss/org.css"/>
-* Install
-** ISO installation
-|-------+---------------------|
-| lsblk | list all partiation |
-| mkfs  | format partiation   |
-| fdisk | manage partiation   |
-|-------+---------------------|
-#+begin_src 
-lsblk
-sudo umount....
-format the partation: 
-sudo mkfs -t ext4 /dev/sda1
-sudo mkfs -t ext4 /dev/sda2
-sudo mkfs -t ext4 /dev/sda
-sudo dd if=.../ubuntu-20.04.3-desktop-amd64.iso of=/dev/sda bs=4M status=progress && sync
-resize the host
-....
-sudo mkfs -t ext4 /dev/sda
-sudo fdisk -l
-sudo fdisk  /dev/sda -> m, g, n, 1, Enter, w
+* Install & Recovery
+** ISO Installation
+|---------+------------------------|
+| lsblk   | list block devices     |
+| mkfs    | format partition       |
+| fdisk   | manage partition table |
+|---------+------------------------|
 
-sudo dd if=/dev/nvm..p1 of=/dev/sda1
-sudo dd if=/dev/nvm..p3 of=/dev/sda2
+#+begin_src sh
+  # Inspect
+  lsblk
+  sudo fdisk -l
 
+  # Format whole disk or partition
+  sudo mkfs -t ext4 /dev/sda
+  sudo mkfs -t ext4 /dev/sda1
 
-from windows: Rufus
-Disk can delete all partation in linux 
-lsblk -f
-sudo mkfs -t ext4 /dev/sda
-from Linux:
-sudo dd if=~/Downloads/ubuntu-20.04.3-desktop-amd64.iso of=/dev/sda bs=4M status=progress && sync
+  # Write ISO to USB
+  sudo dd if=ubuntu.iso of=/dev/sda bs=4M status=progress && sync
+
+  # Partition with fdisk (GPT)
+  sudo fdisk /dev/sda   # then: m → g → n → 1 → Enter → w
+
+  # Clone a partition
+  sudo dd if=/dev/nvme0n1p1 of=/dev/sda1 bs=4M status=progress
 #+end_src
 
-** backup system
-one step to backup in USB
-#+begin_src
- sudo dd if=/dev/nvmxx2 of=/dev/sda2 bs=4M status=progress && sync  
+From Windows: use Rufus.
+To wipe a disk: =diskpart= → select disk → clean.
+
+** Disk Backup & Restore
+Backup system partition to USB:
+#+begin_src sh
+  sudo dd if=/dev/nvme0n1p2 of=/dev/sda2 bs=4M status=progress && sync
 #+end_src
 
-old setting
-insert SSD usb
-$ lsblk
-: check the partition of whole disk
-$ sudo fdisk -l
-: check the detail partation
-$ sudo mkfs -t ext4 /dev/sda
-: format sda  disk (can also for partition )
-$ sudo fdisk /dev/sda
-: make new partiation distribation for backup
-$ sudo dd if=/dev/nvmxx2 of=/dev/sda2 bs=4M status=progress && sync
-: backup the whole system disk into sda2 backup partition
-$ disk resize the restore partation
-: this step can open the Disks in APP, and resize the system disk,
-: better if the system disk is 10GB bigger than the backup partition.
-: Later for backup again, don't forget resize it back to backup again
-$ sudo  mkfs -t ext4 /dev/nvmxxx2
-: clean the system partition
-$ sudo dd  if=/dev/sda2 of=/dev/nvmxx2 bs=4M status=progress && sync
-: should be just fine
+Full workflow:
+1. =lsblk= / =sudo fdisk -l= — inspect disks
+2. =sudo mkfs -t ext4 /dev/sda= — format target disk
+3. =sudo fdisk /dev/sda= — create partitions on target
+4. =sudo dd if=/dev/nvme0n1p2 of=/dev/sda2 bs=4M status=progress && sync= — backup
+5. Use Disks (GUI) to resize the restore partition (~10 GB larger than the backup)
+6. To restore: =sudo mkfs -t ext4 /dev/nvme0n1p2= then reverse the =dd= command
 
-** grub repair
-for error : Minimal BASH-like line editing is supported......
-#+begin_src
-   grub > ls 
-   grub > ls (hd0,gptXX)/boot/grub
+Alternative with rsync:
+#+begin_src sh
+  sudo mount /dev/sda1 /media/Backup
+  rsync -aAXv --delete --exclude=/media / /media/Backup/LinuxBackup
 #+end_src
-  if XX partation returns many file, one is with grub.cfg, this is the one we want
+
+** GRUB Repair
+When seeing "Minimal BASH-like line editing is supported…":
 #+begin_src
-     grub > set root=(hd0,gptXX)
-     grub > set prefix=(hd0,gptXX)/boot/grub
-     grub > normal
+  grub> ls
+  grub> ls (hd0,gptXX)/boot/grub    # find the one with grub.cfg
+  grub> set root=(hd0,gptXX)
+  grub> set prefix=(hd0,gptXX)/boot/grub
+  grub> normal
 #+end_src
-enter the system
-#+begin_src
+
+After booting into the system:
+#+begin_src sh
   sudo add-apt-repository ppa:yannubuntu/boot-repair
   sudo apt-get update
   sudo apt-get install boot-repair
-  sudo grub-install /dev/where EFI partation is
+  sudo grub-install /dev/nvme0n1    # EFI partition device
 #+end_src
 
-** Recover the  fastplatte in windows
-#+BEGIN_SRC 
-1. WIN+R diskpart
-2. select disk (Disk)
-3. clean
-4. new add 
-#+END_SRC
-** write images in USB
-
-1. 下载ubuntu 
-2. 下载USBwriter并安装
-3. 写入系
-
-** reboot
-#+BEGIN_SRC
-my computer : F12
-#+END_SRC
-** Update nvidia drivers for linux
-#+BEGIN_SRC 
-sudo add-apt-repository ppa:graphics-drivers/ppa
-sudo apt update 
-ubuntu-drivers devices
-sudo apt-get --reinstall install nvidia-430
-    1.  will be asked for password
-    2.  reboot
-    3.  select Enroll MOK -> continue -> Yes -> Roboot
-nvidia-sim
-watch -n 1 nvidia-smi
-#+END_SRC
-
-** chinese 
-export LC_CTYPE=zh_CN.UTF-8
-sudo apt-get -y install language-pack-zh-hans
-此应用压制中英文的同步变化, 尽量避免使用中文
-** Time Screensaver
-NowSat Nov  5 12:29:50 2022, I just configured my computer for a time screensaver.
-+ [[https://github.com/alexanderk23/gluqlo][link]]
-+ go the the link, for me only work with building from source, don't forget the dependence.
-+ after install it add  following into ~/.xscreensaver under section of programs:
-  #+begin_src
-    gluqlo -root \n\
-  #+end_src
-+ install Xscreensaver if not with following, but before that, delete gnome-screensaver if exist.
-  #+begin_src
-    sudo apt-get install xscreensaver xscreensaver-data-extra xscreensaver-gl-extra
-  #+end_src
-+ start Screensaver application, find the Gluqlo, and set it to be the only one, more setting is option
-+ start startup application, add one as following, name and comment is as well(liberty)command is this: xscreensaver -nosplash
-+ lauch keyshort, add keyshort as following, key combination is as personal wish
-  #+begin_src
-    xscreensaver-command -lock
-  #+end_src
-+ change Wayland to xorg
-  - sudo apt install xorg
-  - sudo nano /etc/gdm3/custom.conf
-  - WaylandEnable=false
-+ now test the keyshort  
-
-** Powerlevel10 with zsh
-- apt install zsh
-- download MesloLGS NF  font
-- download powerlevel10 with git
-- exec zsh
-
-* System configuration collection
-** check port of application
-#+begin_src sh :dir /sudo::  :results output
-ps -aux |grep mongo
-netstat -nap |grep 80
-#+end_src
-
-#+RESULTS:
-: mongodb   308267  0.9  1.4 1544536 110820 ?      Ssl  21:30   0:25 /usr/bin/mongod --config /etc/mongod.conf
-: root      314541  0.0  0.0  12324   652 pts/4    S+   22:12   0:00 grep mongo
-: tcp        0      0 127.0.0.1:27017         0.0.0.0:*               LISTEN      308267/mongod       
-: unix  2      [ ACC ]     STREAM     LISTENING     4021239  308267/mongod        /tmp/mongodb-27017.sock
-: unix  3      [ ]         STREAM     CONNECTED     4027655  308267/mongod        
-
-** open fire wall  for port
-sudo apt install firewalld
-add port :
-sudo firewall-cmd --add-port=80/tcp --permanent
-sudo firewall-cmd --remove-port=80/tcp --permanent
-restart firewall:
-sudo  firewall-cmd --reload
-check port:
-sudo  firewall-cmd --list-all
-** firewall
-systemctl status firewalld
-systemctl stop firewalld
-systemctl disable firewalld
-systemctl enable firewalld
-
-** Shutdown Keyboard default
-#+BEGIN_SRC 
-
-1. $ xinput list 
-   Find the Touchpad and its NAME and ID
-2. $ xinput set-prop 'NAME' 'Device Enabled' 0
-   to close the Touchpad
-3. but with following can be named as tpOn and tpOff in ./bashrc
-alias tpOff="xinput set-prop 'SYNA1D31:00 06CB:CD48 Touchpad' 'Device Enabled' 0"
-alias tpOn="xinput set-prop 'SYNA1D31:00 06CB:CD48 Touchpad' 'Device Enabled' 1"
-4. Close Touchpad default in boost system
-   the following in ~/.config/autostart/xinput.desktop
-#+END_SRC
-
-#+BEGIN_SRC 
-[Desktop Entry]
-Type=Application
-Exec=xinput set-prop 'SYNA1D31:00 06CB:CD48 Touchpad' 'Device Enabled' 0
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name[zh_CN]=touchpad enable
-Name=touchpad enable
-#+END_SRC
-** autostart
-Thunderbird
-#+begin_src 
-[Desktop Entry]
-Type=Application
-Exec=/usr/bin/thunderbird
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name[en_US]=thunderbird
-Name=thunderbird
-Comment[en_US]=thunderbird
-Comment=thunderbird
-
-#+end_src
-** exchange Control Key and Caps Key
-
-在/etc/default/keyboard文件中添加:
-#+BEGIN_SRC 
-XKBOPTIONS="ctrl:nocaps
-#+END_SRC
-or
-#+BEGIN_SRC shell
-setxkbmap -option ctrl:nocaps
-#+END_SRC
-setting for 右键没反应
-$ sudo add-apt-repository universe
-$ sudo apt install gnome-tweak-tool
-
-** right key no response
-#+BEGIN_SRC 
-gsettings set org.gnome.desktop.peripherals.touchpad click-method areas
-#+END_SRC
-
-** hotkey
-
-| C-M- t | terminal             |
-| C-M- p | thunderbird          |
-| C-M- e | emacs                |
-| C-M- f | firefox              |
-| C-M- j | emacs windows switch |
-| C-M- t | terminal             |
-| C-M- w | emacs worterbuch     |
-| C-M- t | terminal             |
-| C-M- t | terminal             |
-|        |                      |
-
-
-
-|---------------------------------+-----------|
-| Switch application              | Alt + Tab |
-| Switch window of an application | Alt + Spc |
-|                                 |           |
-|---------------------------------+-----------|
-
-|--------------+----------|
-| Alt Ctrl Del | 退出用户 |
-
-in Einstellung, the executable command can be used in command for customized hotkey
-
-** clear caches
-this command has been added to the .bashrc of the /root. 
-only root user can call this command
-#+begin_src sh
-alias freemem="sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a && printf '\n%s\n' 'Ram-cache and Swap Cleared' "
-#+end_src
-** create customized dock to favorites
-- find the executable files and icon
-- create the desktop setting file: /usr/share/applications/myapp.desktop
-- change the settings and make it executable +x
-- new works as normal
- 
-  #+begin_src shell
-    #!/usr/bin/env xdg-open
-    [Desktop Entry]
-    Version=1.0
-    Type=Application
-    Terminal=false
-    Exec=/path/to/yourapp
-    Name=YourApp
-    Comment=Description of YourApp
-    Icon=/path/to/yourapp.png
-  #+end_src
-  
-** hstr
+** Recover Windows Disk (diskpart)
 #+begin_src
-add-apt-repository ppa:ultradvorka/ppa
-apt-get update
-apt-get install hstr
+  WIN+R → diskpart
+  select disk N
+  clean
+  create partition primary
 #+end_src
-the hh
 
-* commands
-** hits
-- assigne permition for delete
+** Boot Menu Keys
+My machine: =F12= during POST.
+
+* System Configuration
+** NVIDIA Drivers
 #+begin_src sh
-chmod -R u+rwx /usr/users/szhao/go-workspace/pkg/mod
+  sudo add-apt-repository ppa:graphics-drivers/ppa
+  sudo apt update
+  ubuntu-drivers devices
+  sudo apt-get --reinstall install nvidia-430
+  # Reboot → Enroll MOK → continue → Yes → Reboot
+  nvidia-smi
+  watch -n 1 nvidia-smi
 #+end_src
 
-- /ect/ssh/sshd_config
-  - AllowedUsers cloud silin, allow such user login remotely
-
-** terminal
-*** shortcut
-S-C-c : can copy out from terminal
-S-C-v : can paste into terminal
-C-h : backwards to delete
-C-j : enter
-C-k : cut after
-C-u : cut before
-
-*** Link account, It's after the ownership, only for hard link.
-the number of current folder is 2 + the number of subdirectories
-it can also show how many folder are contained in the prerent directory: 1 + the number of subdirectories of present directory, so at least 2.
-
-** sammary
-#+begin_src
-fdisk -l
-
-fdisk /dev/nvme0n1p4 (m, p, n, ...)
-mkfs.ext4 /dev/nvme0n1p4
-sudo emacs /etc/fstab
-/dev/nvme0n1p4 /home/silin/4GB ext4 defaults 0 0
-#+end_src
-in /etc/fstab, the command must be correct, otherwise the system can't booted.
-
-#+begin_src  sh :results output
-  cat < source1.c >> source2.c (add source1.c to the end of source2.c)
-#+end_src
-
-echo $PATH | tr \: \\n
-
-** file management
-
-在~内找filename的文件
-find ~ -name filename
-
-找到.bash_history内带有"install"的内容
-grep -n  "install" .bash_history
-
-copy 110.txt to 111.txt
-echo | cat 110.txt > 111.txt
-
-
-> 擦除再写
->> 追加写入
-
-读取.sdsv_history的不重复内容，再写入到.sdsv
-echo | sort -n .sdsv_history |uniq > .sdsv
-
-** directory operation
-#+BEGIN_SRC 
-tree -L 2
-alias open='nautilus'
-open .
-#+END_SRC
-** find uninstall and remove software
-#+BEGIN_SRC 
-sudo apt list --installed | grep software
-whereis software
-sudo apt-get --purge remove software
-sudo apt-get autoremove
-#+END_SRC
-** su password config
-sudo passwd :to configure the password of root user
-** get IP address
-curl ifconfig.me
-** grep sort
-grep -n "xxx" ./test.txt
-sort (--reverse -t " " -k 3 ) test.csv
-** link 
-softlink 
-#+begin_src 
-ln -s filename linkname // 快捷方式
-ln -s sourcefile softlinkname
-filename加上绝对路径，linkname被移动后，仍能访问访问文件
-#+end_src
- hard link
-#+begin_src 
-ln filename linkname   //硬链接
-不占用磁盘空间，重复连接到文件的inode点。
-可以在不同地方通过硬连接对文件进行操作
-#+end_src
-
-** cd to program with which
-cd $(dirname $(which cling))
-
-** awk 
- delete the repeat : awk '!a[$0]++' file.txt
-
-** less
-
-|-------+---------------|
-| J     | down          |
-| K     | up            |
-| Space | next page     |
-| b     | previous page |
-| /     | search        |
-| n     | next mark     |
-| N     | previous mark |
-| q     | quit          |
-|-------+---------------|
-
-
-** link
-*** 静态库的制作
-**** 库方
-include/head.h  lib/  src/
-将在src/中编写要实现的文件
-并编译这些文件             $ gcc *.c -c -I ../include/
--I :链接头文件
-再将这些编译后的打包       $ ar rcs libtest.a *.o
-ar : -archive 打包
-检测 : nm libtest.a
-前缀lib 和后缀.a 不能更改，实际名字是test
-
-最后将生成的libtest.a放到上级目录lib中，
-可以将lib和include目录发送给甲方
-
-**** 甲方
-
-根据include/head.h 的头文件编写自己的应用文件main.c
-编译main.c并链接头文件和库 
-  $ gcc main.c -I  ./include/ -L ./lib/ -ltest -o app
--I : 连接头文件
--L : 链接库
--ltest : 链接库文件，去头lib 去尾.a
--o: 指点生成的应用名
-
-**** 特点
-
-优点： 加载块，移植方便
-缺点 ：部署更新麻烦，引用的重复文件重复储存，浪费空间
-
-*** 动态库的制作
-
-编译    $ gcc *.c -c -fpic -I ../include
--fpic 或者 fPIC : 特殊命令
-打包    $ gcc -shared *.o -o libxxx.so
-头lib 尾.so 
-
-使用和静态库相似， 根据头文件编写应用文件main.c
-$ gcc main.c -I ./inculde/ -L ./lib/ -lxxx -o app
-
-对于linux生成的文件都是elf格式，并由ld-libc.so动态加载,需要让app能别找
-到可以用环境变量或者配置文件
-
-**** 环境变量
-
-临时设置   
-  $ export LD_LIBRARY_PATH=./lib
-或者新增   
-  $ export LD_LIBRARY_PATH=./lib:LD_LIBRARY_PATH
-
-临时设置可以使用相对路径，
-
-永久设置 用户
-$ cat " LD_LIBRARY_PATH=./lib:LD_LIBRARY_PATH" >> ~/.bashrc
-$ source ~./bashrc
-
-永久设置 系统
-$ sudo cat "LD_LIBRARY_PATH=./lib:LD_LIBRARY_PATH" >> /etc/profile
-$ source /etc/profile
-
-**** 修改配置文件
-
-配置文件/etc/ld.so.conf
-$ sudo cat "绝对路径/lib" >> /etc/ld.so.conf
-$ sudo ldconfig -v 激活配置
-
-**** 通过函数加载
-
-dlopen dlclose dlsym
-
-** sshpass login
-ssh user@ip
-sshpass -p password ssh user@ip
-
-** Login without password
-ssh-keygen -r rsa and drei mal enter
-ssh-copy-id cloud@ip
-ssh-copy-id localhost(warming:username should not be hostname)
-
-** ssh root login
-emacs /etc/ssh/sshd_config
-1. PermitRootLogin yes
-2. AllowUsers root OtherUser
-
-** output redirect
-comands xxx >> output file
-comands xxx &>> str error file
-** recursive string replace
+** Chinese / I18n
 #+begin_src sh
+  export LC_CTYPE=zh_CN.UTF-8
+  sudo apt-get -y install language-pack-zh-hans
+  locale -a | grep zh
+#+end_src
+
+For Chinese PDF output with pandoc:
+#+begin_src sh
+  fc-list -f "%{family}\n" :lang=zh
+  pandoc test.org -o test.pdf --pdf-engine=xelatex -V mainfont="AR PL KaitiM GB"
+#+end_src
+
+For Emacs Chinese input: install fcitx + sougou, then set =LC_CTYPE=zh_CN.UTF-8=.
+
+** Screensaver (gluqlo)
+- Source: https://github.com/alexanderk23/gluqlo (build from source)
+- Add =gluqlo -root\n\= to =~/.xscreensaver= programs section
+
+#+begin_src sh
+  sudo apt-get install xscreensaver xscreensaver-data-extra xscreensaver-gl-extra
+  # Remove gnome-screensaver first if present
+#+end_src
+
+- Open Screensaver settings, set Gluqlo as the only screensaver
+- Add startup entry: =xscreensaver -nosplash=
+- Add keyboard shortcut: =xscreensaver-command -lock=
+- If needed, switch from Wayland to Xorg:
+  #+begin_src sh
+    sudo apt install xorg
+    # In /etc/gdm3/custom.conf: WaylandEnable=false
+  #+end_src
+
+** Zsh + Powerlevel10k
+#+begin_src sh
+  apt install zsh
+  # Download MesloLGS NF font
+  # Clone powerlevel10k: git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/powerlevel10k
+  exec zsh
+#+end_src
+
+** Keyboard & Touchpad
+Disable touchpad:
+#+begin_src sh
+  xinput list                          # find touchpad NAME and ID
+  xinput set-prop 'NAME' 'Device Enabled' 0
+#+end_src
+
+Add to =~/.bashrc=:
+#+begin_src sh
+  alias tpOff="xinput set-prop 'SYNA1D31:00 06CB:CD48 Touchpad' 'Device Enabled' 0"
+  alias tpOn="xinput set-prop 'SYNA1D31:00 06CB:CD48 Touchpad' 'Device Enabled' 1"
+#+end_src
+
+Autostart disable at boot: create =~/.config/autostart/xinput.desktop= with =Exec=xinput set-prop … 0=.
+
+Swap Caps Lock and Ctrl:
+#+begin_src sh
+  setxkbmap -option ctrl:nocaps
+  # Or in /etc/default/keyboard: XKBOPTIONS="ctrl:nocaps"
+#+end_src
+
+Right-click on touchpad:
+#+begin_src sh
+  gsettings set org.gnome.desktop.peripherals.touchpad click-method areas
+#+end_src
+
+** Hotkeys
+|-------------+------------------|
+| C-M- t      | terminal         |
+| C-M- p      | thunderbird      |
+| C-M- e      | emacs            |
+| C-M- f      | firefox          |
+| C-M- j      | emacs window     |
+| C-M- w      | emacs wörterbuch |
+| Alt+Tab     | switch app       |
+| Alt+Spc     | switch window    |
+| Alt+Ctrl+Del| log out          |
+|-------------+------------------|
+
+** Autostart
+Create desktop entry in =~/.config/autostart/=, e.g. for thunderbird:
+#+begin_src conf
+  [Desktop Entry]
+  Type=Application
+  Exec=/usr/bin/thunderbird
+  Hidden=false
+  NoDisplay=false
+  X-GNOME-Autostart-enabled=true
+  Name=thunderbird
+#+end_src
+
+** Firewall
+#+begin_src sh
+  sudo apt install firewalld
+  sudo firewall-cmd --add-port=80/tcp --permanent
+  sudo firewall-cmd --remove-port=80/tcp --permanent
+  sudo firewall-cmd --reload
+  sudo firewall-cmd --list-all
+
+  systemctl status firewalld
+  systemctl stop firewalld
+  systemctl disable firewalld
+#+end_src
+
+** Clear Caches
+In =/root/.bashrc=:
+#+begin_src sh
+  alias freemem="sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a && printf '\n%s\n' 'Ram-cache and Swap Cleared'"
+#+end_src
+
+** Custom .desktop Entries
+1. Find executable and icon
+2. Create =/usr/share/applications/myapp.desktop=:
+   #+begin_src conf
+     [Desktop Entry]
+     Version=1.0
+     Type=Application
+     Terminal=false
+     Exec=/path/to/yourapp
+     Name=YourApp
+     Icon=/path/to/yourapp.png
+   #+end_src
+3. =chmod +x= the desktop file — it now appears as a normal application.
+
+** Hostname
+#+begin_src sh
+  hostnamectl
+  hostnamectl set-hostname NEWNAME
+  cat /etc/hostname
+  cat /etc/hosts
+#+end_src
+
+** System Monitor
+#+begin_src sh
+  sudo apt install indicator-multiload gir1.2-gtop-2.0 gir1.2-networkmanager-1.0 gir1.2-clutter-1.0
+  # Then install "system monitor extension" from Ubuntu Software
+#+end_src
+
+** hstr (Shell History Search)
+#+begin_src sh
+  sudo add-apt-repository ppa:ultradvorka/ppa
+  sudo apt-get update
+  sudo apt-get install hstr
+#+end_src
+Bind to =Ctrl-R= or =hh=.
+
+* Command Reference
+** File & Directory
+#+begin_src sh
+  find ~ -name filename                # find by name
+  tree -L 2                            # directory tree
+  alias open='nautilus' && open .      # open file manager
+#+end_src
+
+** Text Processing
+#+begin_src sh
+  grep -n "pattern" file.txt           # search with line numbers
+  sort -t " " -k 3 test.csv            # sort by column 3
+  sort --reverse test.csv
+  awk '!a[$0]++' file.txt              # remove duplicate lines
+  echo $PATH | tr : '\n'               # split PATH on colon
   find . -type f -name "*.md" -exec sed -i 's/foo/bar/g' {} +
-  find . -type f -name "*.vue" -exec sed -i 's/store.state.Timer/store.state.Session01/g' {} +
-#+end_src
-* Useful Software
-** tar
--x : extract
--c: compose
--v: show the process
--z: with zip
--f : such file
-
-#+BEGIN_SRC sh
-  tar -zvcf xxx.tar.gz xxx
-  tar -zvxf xxx.tar.gz
-#+END_SRC
-
-** fcitx for sougou
-#+BEGIN_SRC 
-1. sudo apt install fcitx
-download sougou
-2. sudo apt  --fix-broken install(after download)
-3. export LC_CTYPE=zh_CN.UTF-8 (for Emacs)
-#+END_SRC
-
-** eog
-#+BEGIN_SRC 
-eog xxx.png to view png with bluit in software eog
-#+END_SRC
-** Okular
-#+BEGIN_SRC 
-sudo apt-get install okular
-F2 to constimizer
-F7 mode view
-C-gg to the page
-C-n page down
-C-p page up
-M-n scroll down
-M-p scroll up
-C-b C-b add Annoation, 1 to note
-SPC-b add bookmark
-SPC-SPC rename bookmark
-SPC-n bookmark down
-SPC-p bookmark up
-
-#+END_SRC
-** xournal
-#+BEGIN_SRC  
-sudo apt install xournal
-#+END_SRC
-** evince
-#+BEGIN_SRC 
-evince xxx.pdf to view pdf file
-
-#+END_SRC
-** stardict
-download dictionaries from,  http://download.huzheng.org/  and  http://download.huzheng.org/zh_TW/  extract, and put them in /usr/share/stardict/dic/ ,  if without this folder, create it with root 
-#+BEGIN_SRC shell
-  sudo apt install stardict
-  sudo apt install sdcv 
-  cd ~/Dropbox/cs/Tools
-  bzip2 -dk *.bz2
-  for i in *.tar.bz2; do sudo tar -xjvf "$i" -C /usr/share/stardict/dic ; done
-
-#+END_SRC
-
-** kmplayer
-sudo apt install kmplayer
-** simplescreenrecorder
-#+BEGIN_SRC 
-
-sudo apt install simplescreenrecorder
-alias ssr='simplescreenrecorder'
-$ ssr
-Ctrl + Shift + Alt + V start or pause 
-
-#+END_SRC
-** Cvim
-#+BEGIN_SRC 
-C-j moive to left 
-C-k moive to right
-
-#+END_SRC
-** hotopea
-#+begin_src 
-登陆photopea网站后，新建并上传图片
-设置白色背景：图像 -> 调整 -> 色阶  点击下面的白色 后点击要处理的图片区域
-去背景 ： 魔术棒 ， 点击去连续， 再直接delete
-#+end_src
-** manual png create png
-
-after edit a file.dot
-
-dot -Tpng -O file.dot
-
-** gpg for secret
-
-#+BEGIN_SRC 
-gpg --list-secret-keys
-gpg -r user -e xxx.file
-gpg -d xxx.file.gpg
-after change xxx.file :gpg --verify xxx.file.gpg
-
-#+END_SRC
-
-** ranger
-apt install
-** Linux connect to Android
-#+begin_src 
-kedconnect on linux
-kedconnect on android
-with  the same internet connection can be found each other, and communication
-
 #+end_src
 
-#+begin_src 
-The file can be found in Download folder of each devices
+** Links (Soft & Hard)
+Soft link (symlink, shortcut):
+#+begin_src sh
+  ln -s /absolute/path/to/source linkname
+#+end_src
+Use absolute path so the link survives being moved.
+
+Hard link:
+#+begin_src sh
+  ln filename linkname
+#+end_src
+Shares the same inode; no extra disk space.
+
+Directory link count: 2 + number of subdirectories (at least 2 due to =.= and =..=).
+
+** Archives (tar)
+| Option | Meaning       |
+|--------+---------------|
+| -x     | extract       |
+| -c     | create        |
+| -v     | verbose       |
+| -z     | gzip          |
+| -f     | specify file  |
+
+#+begin_src sh
+  tar -zvcf archive.tar.gz dir/
+  tar -zvxf archive.tar.gz
 #+end_src
 
-** gs
-*** remove active content from pdf 
-gs -dNOPAUSE -sDEVICE=pdfwrite -sOUTPUTFILE=CV.pdf -dBATCH CV.pdf
+** Less Pager
+|------+---------------|
+| j    | down          |
+| k    | up            |
+| Space| next page     |
+| b    | previous page |
+| /    | search        |
+| n    | next match    |
+| N    | previous match|
+| q    | quit          |
+|------+---------------|
 
-*** compress
-gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/prepress -dNOPAUSE -dQUIET -dBATCH -sOutputFile=compressed_PDF_file.pdf input_PDF_file.pdf
+** Terminal Shortcuts
+|----------+---------------------|
+| S-C-c    | copy from terminal  |
+| S-C-v    | paste to terminal   |
+| C-h      | backspace           |
+| C-j      | enter               |
+| C-k      | cut to end of line  |
+| C-u      | cut to start of line|
+|----------+---------------------|
 
-** mpv player
-sudo apt install mpv
-
-mpv.conf
-#+begin_src 
-no-osd-bar # 去掉白色进度条
-save-position-on-quit # 关闭时记住文件播放位置
-no-border # 去掉边框
-
-# 解码-字幕
-vo=opengl:gamma-auto:icc-profile-auto
-hwdec=auto
-autofit-larger=92%
-playcache=8192
-lang=zh,chi
-video-sync=display-resample
-
-sub-codepage=enca:zh:utf8
-sub-auto=fuzzy
-sub-text-font-size=40
-sub-text-shadow-offset=0
-sub-text-color="#ffffffff"
-sub-text-font="STZhongsong"
-sub-codepage=utf8:gb18030
-
-screenshot-template=mpv-screenshot-%f-%p
-screenshot-format=png
-
-osd-font="STZhongsong"
-osd-font-size=36
-
---script=/Users/yourname/.config/mpv/autoload.lua
-
+** Process & Port Inspection
+#+begin_src sh
+  ps -aux | grep mongo
+  netstat -nap | grep 80
 #+end_src
 
-autoload.lua
-#+begin_src 
--- This script automatically loads playlist entries before and after the
--- the currently played file. It does so by scanning the directory a file is
--- located in when starting playback. It sorts the directory entries
--- alphabetically, and adds entries before and after the current file to
--- the internal playlist. (It stops if the it would add an already existing
--- playlist entry at the same position - this makes it "stable".)
--- Add at most 5000 * 2 files when starting a file (before + after).
-MAXENTRIES = 5000
-
-function Set (t)
-    local set = {}
-    for _, v in pairs(t) do set[v] = true end
-    return set
-end
-
-EXTENSIONS = Set {
-    'mkv', 'avi', 'mp4', 'ogv', 'webm', 'rmvb', 'flv', 'wmv', 'mpeg', 'mpg', 'm4v', '3gp',
-    'mp3', 'wav', 'ogv', 'flac', 'm4a', 'wma',
-}
-
-mputils = require 'mp.utils'
-
-function add_files_at(index, files)
-    index = index - 1
-    local oldcount = mp.get_property_number("playlist-count", 1)
-    for i = 1, #files do
-        mp.commandv("loadfile", files[i], "append")
-        mp.commandv("playlist-move", oldcount + i - 1, index + i - 1)
-    end
-end
-
-function get_extension(path)
-    match = string.match(path, "%.([^%.]+)$" )
-    if match == nil then
-        return "nomatch"
-    else
-        return match
-    end
-end
-
-table.filter = function(t, iter)
-    for i = #t, 1, -1 do
-        if not iter(t[i]) then
-            table.remove(t, i)
-        end
-    end
-end
-
-function find_and_add_entries()
-    local path = mp.get_property("path", "")
-    local dir, filename = mputils.split_path(path)
-    if #dir == 0 then
-        return
-    end
-    local pl_count = mp.get_property_number("playlist-count", 1)
-    if (pl_count > 1 and autoload == nil) or
-       (pl_count == 1 and EXTENSIONS[string.lower(get_extension(filename))] == nil) then
-        return
-    else
-        autoload = true
-    end
-
-    local files = mputils.readdir(dir, "files")
-    if files == nil then
-        return
-    end
-    table.filter(files, function (v, k)
-        local ext = get_extension(v)
-        if ext == nil then
-            return false
-        end
-        return EXTENSIONS[string.lower(ext)]
-    end)
-    table.sort(files, function (a, b)
-        local len = string.len(a) - string.len(b)
-        if len ~= 0 then -- case for ordering filename ending with such as X.Y.Z
-            local ext = string.len(get_extension(a)) + 1
-            return string.sub(a, 1, -ext) < string.sub(b, 1, -ext)
-        end
-        return string.lower(a) < string.lower(b)
-    end)
-
-    if dir == "." then
-        dir = ""
-    end
-
-    local pl = mp.get_property_native("playlist", {})
-    local pl_current = mp.get_property_number("playlist-pos", 0) + 1
-    -- Find the current pl entry (dir+"/"+filename) in the sorted dir list
-    local current
-    for i = 1, #files do
-        if files[i] == filename then
-            current = i
-            break
-        end
-    end
-    if current == nil then
-        return
-    end
-
-    local append = {[-1] = {}, [1] = {}}
-    for direction = -1, 1, 2 do -- 2 iterations, with direction = -1 and +1
-        for i = 1, MAXENTRIES do
-            local file = files[current + i * direction]
-            local pl_e = pl[pl_current + i * direction]
-            if file == nil or file[1] == "." then
-                break
-            end
-
-            local filepath = dir .. file
-            if pl_e then
-                -- If there's a playlist entry, and it's the same file, stop.
-                if pl_e.filename == filepath then
-                    break
-                end
-            end
-
-            if direction == -1 then
-                if pl_current == 1 then -- never add additional entries in the middle
-                    mp.msg.info("Prepending " .. file)
-                    table.insert(append[-1], 1, filepath)
-                end
-            else
-                mp.msg.info("Adding " .. file)
-                table.insert(append[1], filepath)
-            end
-        end
-    end
-
-    add_files_at(pl_current + 1, append[1])
-    add_files_at(pl_current, append[-1])
-end
-
-mp.register_event("start-file", find_and_add_entries)
-
+** Output Redirection
+#+begin_src sh
+  command >> file          # append stdout
+  command &>> file         # append stdout + stderr
+  echo | cat 110.txt > 111.txt   # overwrite (erase then write)
+  echo | cat source1.c >> source2.c   # append
 #+end_src
 
-** mellplayer
-sudo apt-get install libmpv-dev mpv
+** Misc
+#+begin_src sh
+  # Find and uninstall a package
+  sudo apt list --installed | grep software
+  whereis software
+  sudo apt-get --purge remove software
+  sudo apt-get autoremove
 
-** thunderbird
-#+begin_src 
-Alt to open the menubar,
-Ansicht Anpassen to setting ungelesen
+  # Set root password
+  sudo passwd
+
+  # Get public IP
+  curl ifconfig.me
+
+  # cd to directory of a binary
+  cd $(dirname $(which cling))
+
+  # Recursive string replace
+  find . -type f -name "*.md" -exec sed -i 's/foo/bar/g' {} +
 #+end_src
 
-#+begin_src 
-For Filter:
-cd ~/.thunderbird/4r373mm9.default-release/ImapMail/imap.gmail.com
-import msgFilterRules.dat to Gmail
+** sed Quick Reference
+| cmd | action                                             |
+|-----+----------------------------------------------------|
+| a   | add line(s) after match                             |
+| c   | replace matched line                                |
+| i   | insert line(s) before match                         |
+| s   | substitute                                         |
+| d   | delete                                             |
+
+Example:
+#+begin_src sh
+  sed -rn '/pattern/s/old/new/pg' file.csv   # substitute globally, print matches
+  sed 's/    //pg' file.csv                  # strip leading spaces
 #+end_src
 
-** EverSync
-Eversync sync all bookmarks between chrome and firefox with G Konten
-** IPFS
-#+begin_src 
-
-download go-ipfs and untar
-cp ipfs /usr/local/bin and sudo ./install.sh
-
-sudo apt install ipfs
-
-ipfs init
-export EDITOR=/usr/bin/emacs
-ipfs config edit
-ipfs id
-ipfs  help
+* Development
+** GCC Basics
+#+begin_src sh
+  gcc -c file.c -o file.o          # compile only
+  gcc file1.o file2.o -o app       # link
+  gcc -I ./include -L ./lib -lmylib main.c -o app   # with headers and library
 #+end_src
 
+** Static Libraries (.a)
+1. Compile sources to object files: =gcc *.c -c -I ../include=
+2. Archive: =ar rcs libtest.a *.o=
+3. Verify: =nm libtest.a=
+4. Consumer compiles: =gcc main.c -I ./include/ -L ./lib/ -ltest -o app=
+   - =-ltest= strips =lib= prefix and =.a= suffix
 
-#+begin_src 
+*Pros:* fast load, easy to distribute. *Cons:* duplicates disk usage, update needs re-link.
 
-mkdir IPFS
-echo "balabalu" > hallo.org
-ipfs add hallo.org  :get file_hash
-ipfs cat file_hash
-ipfs.io/ipfs/file_hash
+** Dynamic / Shared Libraries (.so)
+Build:
+#+begin_src sh
+  gcc -c -fPIC *.c -I ../include        # position-independent code
+  gcc -shared *.o -o libxxx.so
 #+end_src
 
- push
-
-#+begin_src 
-
-ipfs add -r . (we get all file_hash(s), and a folder_hash(IPFS))
-ipfs name publish folder_hash  (: to IDHASH)
-
-in Webborser: ipfs.io/ipns/IDHASH
-
-
-ipfs name resolve IDHASH : to HASH_file
-
-特殊加密，暂时不用
-ipfs key gen --type=rsa --size=2048 IPFS
-ipfs name publish --key=IPFS folder_hash
+Consumer compiles:
+#+begin_src sh
+  gcc -I ./include -L ./lib -lxxx main.c -o app
 #+end_src
 
+Runtime — the loader must find the =.so=:
+- Per-session: =export LD_LIBRARY_PATH=./lib=
+- Permanent (user): add to =~/.bashrc=
+- Permanent (system): add to =/etc/ld.so.conf=, run =sudo ldconfig -v=
+- At link time: =-Wl,-rpath=/absolute/path/to/lib=
 
-#+BEGIN_SRC 
-ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "GET", "POST","OPTIONS"]'
-
-ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["*"]'
-
-ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '["true"]'
-
-ipfs config --json API.HTTPHeaders.Access-Control-Allow-Headers '["Authorization"]'
-
-ipfs config --json API.HTTPHeaders.Access-Control-Expose-Headers '["Location"]'
-
-
-http://localhost:5001/webui
-
-#+END_SRC
-
-#+begin_src 
-
-ipfs files mkdir /Docu
-
-ipfs files ls /Docu
-
-ipfs file cp /ipfs/HASH
+One-shot build example:
+#+begin_src sh
+  gcc -c -fPIC add.c sub.c mult.c divi.c
+  gcc -shared -o libmymath.so add.o sub.o mult.o divi.o
+  gcc -L. -Wl,-rpath=. -Wall -o mathDemo mathDemo.c -lmymath
+  ./mathDemo
 #+end_src
-** GPG
-|------------------+---------------------------------------------------------|
-| terminal encrypt | gpg --recipient ID --output en.org --encrypt source.org |
-| terminal decrypt | gpg  en.org                                             |
-| emacs encrypt    | epa-encrypt-file                                        |
-| emacs decrypt    | epa-decrypt-file                                        |
 
-encrypt by terminal, once decrypt by emacs, just as normal file, can be edited anytime
-encrypt by emacs with password, passwd will be ask every time by after edit
-if epa-file-select-key is t
+*Note for Go:* CGo only supports =LD_LIBRARY_PATH=; =-Wl,-rpath= doesn't carry through.
 
-** Zulip Rocket Chat
+** dlopen / dlsym (runtime loading)
+Functions: =dlopen=, =dlclose=, =dlsym= — load a shared library at runtime and call its symbols.
 
-* System control
-** system backup
-mount rsync
+** Makefile
+Format:
+#+begin_src makefile
+  target: dependencies
+  	command
+#+end_src
 
-查看系统的磁盘 :lsblk
-再将磁盘(也可以是某个分区)挂载到某个点 :
+V1 — simplest:
+#+begin_src makefile
+  app: main.c add.c sub.c mul.c
+  	gcc main.c add.c sub.c mul.c -o app
+#+end_src
 
-该磁盘可以是正在使用的磁盘或者分区  
-#+BEGIN_SRC 
- mount /dev/disk /media/Linux
-sudo mount /dev/sda1 /media/Backup
+V2 — incremental (only recompile changed files):
+#+begin_src makefile
+  app: main.o add.o sub.o mul.o
+  	gcc main.o add.o sub.o mul.o -o app
+  %.o: %.c
+  	gcc -c $< -o $@
+#+end_src
 
-rsync -aAXv --delete --exclude=media target backup/LinuxBackUp20200316
-my opera 
+V3 — automatic variables and wildcard:
+#+begin_src makefile
+  src = $(wildcard ./*.c)
+  obj = $(patsubst %.c, %.o, $(src))
+  target = app
 
-rsync -aAXv /home/sx/ /media/sx/A672BA1B72B9EFE3/linuxbackup/home/
+  $(target): $(obj)
+  	gcc $^ -o $@
+  %.o: %.c
+  	gcc -c $< -o $@
 
-#+END_SRC
-如果要恢复，重复上面的过程，再将target backup 交换
+  clean:
+  	-rm $(obj) $(target) -f
+#+end_src
 
-** system performance
-0. systemlastanzeigen
-   sudo apt install indicator-multiload
+| variable | meaning           |
+|----------+-------------------|
+| $@       | target            |
+| $<       | first dependency  |
+| $^       | all dependencies  |
 
-1. dependence
-sudo apt-get install gir1.2-gtop-2.0 gir1.2-networkmanager-1.0
-gir1.2-clutter-1.0
+* IPC & Concurrency
+** Concepts
+- *Parallel:* multiple processes running simultaneously (multi-core)
+- *Concurrent:* multiple threads interleaved on one core
+- *Synchronous / Asynchronous:* whether a single thread waits for I/O
 
-2. Ubuntu Software 
-search for : system moniter extension
+** Multi-Process Communication
+*** Message Queue (SysV)
+Key API:
+| function  | purpose                      |
+|-----------+------------------------------|
+| ftok()    | generate IPC key             |
+| msgget()  | create/open queue            |
+| msgsnd()  | send message (by type)       |
+| msgrcv()  | receive message (by type)    |
+| msgctl()  | destroy queue                |
 
-3. install and configure performance
+Message struct must start with =long type=.
 
-** hostname
-hostnamectl
-hostnamectl set-hostname
-cat /etc/hostname
-cat /etc/hosts
-* chinese config
-** emacs chinese input
-sudo apt install fcitx
-download sougou for linux
-sudo dpkg -i sougou......
-fcitx set global
-restart configuration to add sougou chinese
+One-way: server sends type 100, client receives type 100.
+Two-way: fork server → parent sends type 100, child receives type 200; client does the opposite.
 
+*** Named Pipe (FIFO)
+#+begin_src sh
+  mkfifo ./myfifo
+#+end_src
+One process opens =O_WRONLY=, another =O_RDONLY=.
 
-$ local -a |grep zh
-sudo apt-get -y install language-pack-zh-hans
-$ local -a |grep zh 
-to see zh is installed
-
-export LC_CTYPE=zh_CN.UTF-8
-to language configuration and auto install drivers to zh_CN.UTF-8
-so in emacs can input sougou, here we go
-
-** chinese output pdf
-for a orgmode file with 汉字
-pandoc xxxx.org -o xxxx.pdf
-pandoc xxxx.org -o xxxx.pdf --pdf-engine=xelatex
-如果没有汉字支持
-#+BEGIN_SRC 
-fc-list -f "%{family}\n"  :lang=zh
-pandoc test.org -o test.pdf --pdf-engine=xelatex -V mainfont="AR PL KaitiM GB"
-#+END_SRC
-找到支持的格式，再指明
-
-* sed 
-
-| a | add new line(s)  after match with context behind a       |
-| c | replace  the current line in match with context behind c |
-| i | add  context behind i  before match                      |
-| s | repace                                                   |
-| d | delete                                                   |
-
-
-sed -rn '/2\/1/s/00/**/pg' test2.csv
-- sed: 
-- -rn : no default output and allow \
-- '   '  : aufrufen
-- /2\/1: reg pattern
-- s: search
-- 00: all 00
--****: will be replaced by**
-- p: print
-- g: global replace
-- test2.csv: input file
-
-sed  's/        //pg' test2.csv 
-
-
-* Makefile
-gcc 调用 make 来构造
-
-** 格式
-
-目标 ： 依赖
-Tab 命令
-
-** 1example
-
-实列文件：add.c  head.h   main.c   maul.c  sub.c  
-直接在terminal 用gcc ：$ gcc add.c main.c sub.c -o app
-
-Makefile :
-$ touch Makefile
-#+BEGIN_SRC  txt
-app: main.c add.c sub.c mul.c
-    gcc main.c add.c sub.c mul.c 
-#+END_SRC
-$ make
-
-** 2修改后只编译改动后的文件
-
-Makefile :
-$ touch Makefile
-#+BEGIN_SRC  txt
-app: main.o add.o sub.o mul.o
-    gcc main.o add.o sub.o mul.o -o app
-
-main.o: main.c
-    gcc -c main.c -o main.o
-
-add.o: add.c
-    gcc -c add.c -o add.o
-
-sub.o: sub.c
-    gcc -c sub.c -o sub.o
-
-mul.o: mul.c
-    gcc -c mul.c -o mul.o
-
-#+END_SRC
-$ make
-所有源文件的修改过，即时间戳晚于生成的目标文件，则重新编译
-
-** 3使用自动变量
-
-$@ :目标
-$< :第一个依赖 
-$^ :所有依赖
-Makefile :
-$ touch Makefile
-
-#+BEGIN_SRC  txt
-obj =   main.o add.o sub.o mul.o
-target = app
-
-$(target):$(obj)
-    gcc $(obj) -o $(target)  // gcc $^ -o $@
-    
-%.o:%.c
-    gcc -c $< -o $@
-
-#+END_SRC
-$ make
-
-** 4增加可移植性
-
-wildcard :查找指定目录下的指定类型文件
-src = $(wildcard ./*.c)
-将当前目录下所有的.c 找到，并赋给src
-
-patsubst :匹配替换
-obj = $(patsubst %.c, %.o, $(src))
-将src中的所有.c替换为.o
-
-Makefile :
-$ touch Makefile
-
-#+BEGIN_SRC  txt
-src = $(wildcard ./*.c)
-obj = $(patsubst %.c, %.o $(src))
-target = app
-
-$(target):$(obj)
-    gcc $^ -o $@
-    
-%.o:%.c
-    gcc -c $< -o $@
-
-#+END_SRC
-$ make
-此文件在别的目录下也能使用
-
-** 5清洁中间的生成的不必要保存文件
-
-make 一般直接执行终结目标，但是可以直接指定make的函数
-clean : 删除不必要的文件，-f : 强制删除，不管有没有该文件，- : 前置-后，遇到错误执行，直接跳过
-
-#+BEGIN_SRC  txt
-src = $(wildcard ./*.c)
-obj = $(patsubst %.c, %.o $(src))
-target = app
-
-$(target):$(obj)
-    gcc $^ -o $@
-    
-%.o:%.c
-    gcc -c $< -o $@
-
-clean:
-    rm $(obj) $(target)
-    rm $(obj) $(target) -f
-    -rm $(obj) $(target) -f
-
-#+END_SRC
-
-$ make
-$ make clean
-
-* BetreibenSystem
-** Program execution level 
-Multi Process : Parallel
-single Process has more thread : Concurrency
-single thread can work in Synchronous or Asynchronous
-** Multi Process
-*** queue communication
-**** one way communication server to client
-Server.c
+*** Unnamed Pipe
 #+begin_src C
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-#include "string.h"
-
-#define messagelen 124
-
-
-struct messqueue
-{
-  long type;
-  char message[messagelen];
-  char ID[4];
-};
-
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-  int key;
-  int receivelen;
-  int conut = 0;
-  struct messqueue sendbuffer;
-  sendbuffer.type = 100;
-
-  key = ftok("./a.c", 'a');
-  if (key < 0) {
-    printf("create key for server failed \n");
-    return -1;
-  }
-  
-  //create the massage queue
-  msgid= msgget(key, IPC_CREAT | 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-
-  do {
-    memset(sendbuffer.message, 0, messagelen);
-    //input your massage
-    printf("please input your massage you want to send to massage queue \n");
-    scanf("%s", sendbuffer.message);
-
-    //wirte the massage(which is now in your struct messqueue) into massage queue msgid
-    msgsnd(msgid, (void *)&sendbuffer, strlen(sendbuffer.message), 0);
-    conut++;
-  }while (conut < 3);
-  
-  msgctl(msgid, IPC_RMID, NULL);
-
-  system("ipcs -q");
-  return 0;
-}
-
+  int fd[2];
+  pipe(fd);
+  // fd[0] for read, fd[1] for write
+  // Write first to fd[1], then read from fd[0]
 #+end_src
 
-Client.C
+*** Signals
+| function  | purpose                          |
+|-----------+----------------------------------|
+| alarm(n)  | SIGALRM after n seconds          |
+| kill()    | send signal to a PID             |
+| raise()   | send signal to self              |
+| pause()   | wait indefinitely for a signal   |
+| signal()  | register handler / SIG_IGN / SIG_DFL |
+
+*** Semaphore & Shared Memory
+| function  | purpose                          |
+|-----------+----------------------------------|
+| shmget()  | create/open shared memory        |
+| shmat()   | attach to process address space  |
+| shmdt()   | detach                           |
+| shmctl()  | destroy                          |
+| semget()  | create semaphore set             |
+| semctl()  | control / destroy semaphore      |
+
+Inspect / clean up:
+#+begin_src sh
+  ipcs -m    # shared memory
+  ipcs -q    # message queues
+  ipcs -s    # semaphores
+  ipcrm -m <shmid>
+#+end_src
+
+** Multi-Thread (pthreads)
+Compile with =-pthread=.
+
+| function                       | purpose                        |
+|--------------------------------+--------------------------------|
+| pthread_create()               | spawn thread                   |
+| pthread_join()                 | wait and retrieve return value |
+| pthread_detach()               | detach (cannot join)           |
+| pthread_exit()                 | exit thread                    |
+| pthread_cancel()               | request cancellation           |
+| pthread_setcancelstate()       | enable/disable cancellation    |
+| pthread_setcanceltype()        | deferred vs asynchronous       |
+| pthread_self()                 | get own thread ID              |
+
+Mutex:
 #+begin_src C
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-#include "string.h"
-
-#define messagelen 124
-
-
-struct messqueue
-{
-  long type;
-  char message[messagelen];
-  char ID[4];
-};
-
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-  int key;
-  int receivelen;
-  int conut = 0;
-  struct messqueue sendbuffer;
-  sendbuffer.type = 100;
-
-  key = ftok("./a.c", 'a');
-  if (key < 0) {
-    printf("create key for server failed \n");
-    return -1;
-  }
-  
-  //create the massage queue
-  msgid= msgget(key, IPC_CREAT | 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-
-  do {
-    memset(sendbuffer.message, 0, messagelen);
-    //input your massage
-    printf("please input your massage you want to send to massage queue \n");
-    scanf("%s", sendbuffer.message);
-
-    //wirte the massage(which is now in your struct messqueue) into massage queue msgid
-    msgsnd(msgid, (void *)&sendbuffer, strlen(sendbuffer.message), 0);
-    conut++;
-  }while (conut < 3);
-  
-  msgctl(msgid, IPC_RMID, NULL);
-
-  system("ipcs -q");
-  return 0;
-}
-
+  pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_lock(&mutex);
+  // critical section
+  pthread_mutex_unlock(&mutex);
 #+end_src
 
-**** two ways communication server vs client
-Server.c
+Read-Write Lock:
 #+begin_src C
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-#include "string.h"
-
-#define messagelen 124
-
-
-struct messqueue
-{
-  long type;
-  char message[messagelen];
-  char ID[4];
-};
-
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-  int key;
-  int receivelen;
-  int conut = 0;
-  pid_t pid;
-  struct messqueue sendbuffer, receiverbuffer;
-
-
-  key = ftok("./b.c", 'a');
-  if (key < 0) {
-    printf("create key for server failed \n");
-    return -1;
-  }
-  
-  //create the massage queue
-  msgid= msgget(key, IPC_CREAT | 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-  pid = fork();
-
-  if (pid > 0) {   //server father process write tpye 100
-    sendbuffer.type = 100;
-
-    while(1) {
-      memset(sendbuffer.message, 0, messagelen);
-      //input your massage
-      printf("please input your massage you want to send to massage queue \n");
-      scanf("%s", sendbuffer.message);
-
-      //wirte the massage(which is now in your struct messqueue) into massage queue msgid
-      msgsnd(msgid, (void *)&sendbuffer, strlen(sendbuffer.message), 0);
-      conut++;
-    }
-  }
-
-  if (pid == 0) {    //server child process read tpye 200
-    while (1) {
-      memset(receiverbuffer.message, 0, messagelen);
-      msgrcv(msgid, (void *)&receiverbuffer, messagelen, 200, 0);
-      printf("the receive massage of massage queue in server is %s \n", receiverbuffer.message);
-    }
-    
-  }
-  
-  msgctl(msgid, IPC_RMID, NULL);
-
-  system("ipcs -q");
-  return 0;
-}
-
-#+end_src
-
-Client.c
-#+begin_src C
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-#include "string.h"
-
-#define messagelen 124
-
-
-struct messqueue
-{
-  long type;
-  char message[messagelen];
-  char ID[4];
-};
-
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-  int key;
-  int receivelen;
-  int conut = 0;
-  pid_t pid;
-  struct messqueue sendbuffer, receiverbuffer;
-
-
-  key = ftok("./b.c", 'a');
-  if (key < 0) {
-    printf("create key for server failed \n");
-    return -1;
-  }
-  
-  //create the massage queue
-  msgid= msgget(key, IPC_CREAT | 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-  pid = fork();
- 
-  if (pid == 0) { // client child process for write tpye 200
-    sendbuffer.type = 200;
-
-    while(1) {
-      memset(sendbuffer.message, 0, messagelen);
-      //input your massage
-      printf("please input your massage you want to send to massage queue \n");
-      scanf("%s", sendbuffer.message);
-
-      //wirte the massage(which is now in your struct messqueue) into massage queue msgid
-      msgsnd(msgid, (void *)&sendbuffer, strlen(sendbuffer.message), 0);
-      conut++;
-    }
-  }
-
-  if (pid > 0) {  // client child process read type 100
-    while(1){
-      memset(receiverbuffer.message, 0, messagelen);
-      msgrcv(msgid, (void *)&receiverbuffer, messagelen, 100, 0);
-      printf("the receive massage of massage queue in server is %s \n", receiverbuffer.message);
-    }
-  }
-  
-  msgctl(msgid, IPC_RMID, NULL);
-
-  system("ipcs -q");
-  return 0;
-}
-
-
-#+end_src
-
-*** pipe communication
-**** named
-1. In current directory:   mkfifo("./myfifo", 0777);
-with mkfifo creat a file, so that other unrelated process can commu  
-
-2. In one process : fd = open("./myfifo", O_WRONGLY);
-open the file,  and :
-write(fd, &process_inter,1);
-change the pipe variable.
-
-3. In other process :   fd = open("./myfifo",O_RDONLY);
-open the file, and : while(process_inter == 0);
-can be controled by pipe variable 
-
-**** unnamed 
-
-1. In one process diff threads
-   creat place for pipe : int fd[2]; one for main thread, one for new thread
-   creat pipe : int ret = pipe(fd);
-   
-   in new thread : read(fd[0], &process_inter 1); if nothing to read, sleep
-   in main thread do its stuff, 
-   after finish : write(fd[1], &process_inter, 1); let new pthread run
-   
-   remeber: wirte at frist in fd[1], and then read at fd[0]
-
-*** signal communication
-**** alarm
-
-alarm(10);   wait for 10 seconds and kill itself
-send signal as 14 to itself
-
-**** kill
-
-kill(pid, 9);
-send signal 9 to pid process
-
-**** raise
-
-raise(9);  == kill(getpid(), 9);
-
-**** pause
-
-pause(); stoped for ever
-
-**** signal
-
-signal(signal_ID, self_function); self function or SIG_ING or SIG_DFL
-
-**** exit
-
-exit(0) will also send signal 17 (SIGCHID) to its father thread;
-*** semaphore communication
-**** key
-
-key can be 2 differ
-
-1. For father and son process : IPC_PRIVATE : 
-2. For unrelated process : self_def key
-#+begin_src C :results output :exports both
-
-  int key;
-  key = ftok("./a.c", 'a');
-  if (key < 0) {
-    printf("create key for server failed \n");
-    return -1;
-  }
-  printf("create key for server success \n");
-#+end_src
-
-#+RESULTS:
-
-**** memcpy
-
-memcpy(p, "niao",4);
-**** shmget
-
-  shmid = shmget(IPC_PRIVATE, 128, 0777);
-  shmid = shmget(key, 128, IPC_CREAT | 0777);
-
-**** shmat
-
-char *p  = (char *) shmat(shmid, NULL, 0);
-after mapping to p : can be manipulated
-scanf("%s", p);
-printf("%s", p);
-
-**** shmdt
-
-delete the mapping of p to shared memory 
-shmdt(p); 
-after that, the manipulation of p is not allowed, and well be
-segmention fault
-
-**** shmctl
-
-delete the created shared memory
-shmctl(shmid, IPC_RMID, NULL); == iprcm -m shmid
-
-**** IPC manipulation
-
-show : ipcs -m(shared memory) -q(message queue) -s(semaphores) 
-delete : ipcrm -m shmid /-q msgid /-s semid
-
-**** msgget
-msgid= msgget(IPC_PRIVATE, 0777);
-
-#+begin_src C :results output :exports both
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-
-  msgid= msgget(IPC_PRIVATE, 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-  system("ipcs -q");
-  return 0;
-}
-
-#+end_src
-
-#+RESULTS:
-#+begin_example
-
------- Nachrichtenwarteschlangen --------
-Schlüssel msqid      Besitzer   Rechte     Benutzt-Bytes Nachrichten 
-0x61091797 2          silin      777        0            0           
-0x00000000 4          silin      777        0            0           
-0x00000000 5          silin      777        0            0           
-0x00000000 6          silin      777        0            0           
-0x00000000 7          silin      777        0            0           
-0x00000000 8          silin      777        0            0           
-0x00000000 9          silin      777        0            0           
-0x00000000 10         silin      777        0            0           
-0x00000000 11         silin      777        0            0           
-0x00000000 12         silin      777        0            0           
-
-create massage queue success  with msgid 12.
-#+end_example
-
-**** msgctl
-msgctl(msgid, IPC_RMID, NULL); == ipcrm -q msgid
-
-#+begin_src C :results output :exports both
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-
-  msgid= msgget(IPC_PRIVATE, 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-  system("ipcs -q");
-  return 0;
-}
-
-#+end_src
-
-#+RESULTS:
-
-
-**** msgsnd &  msgrcv
-
-msgsnd(msgid, (void *)&sendbuffer, strlen(sendbuffer.message), 0);
-
-receivelen = msgrcv(msgid, (void *)&receiverbuffer, messagelen, 100, 0);
-
-#+begin_src C :results output :exports both
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-#include "string.h"
-
-#define messagelen 124
-
-
-struct messqueue
-{
-  long type;
-  char message[messagelen];
-  char ID[4];
-};
-
-
-int main(int argc, char *argv[])
-{
-  int msgid;
-  int receivelen;
-  struct messqueue sendbuffer, receiverbuffer;
-  sendbuffer.type = 100;
-  receiverbuffer.type = 100;
-
-  //create the massage queue
-  msgid= msgget(IPC_PRIVATE, 0777);
-  if (msgid < 0) {
-    printf("creat massage queue failed .\n");
-    return -1;
-  }
-  printf("create massage queue success  with msgid %d.\n",  msgid);
-
-  //input your massage
-  printf("please input your massage you want to send to massage queue \n");
-  scanf("%s", sendbuffer.message);
-
-  //wirte the massage(which is now in your struct messqueue) into massage queue msgid
-  msgsnd(msgid, (void *)&sendbuffer, strlen(sendbuffer.message), 0);
-
-  //clear receiverbuffer.massage
-  memset(receiverbuffer.message, 0, messagelen);
-  //read massage to receiverbuffer from massage queue msgid
-  receivelen = msgrcv(msgid, (void *)&receiverbuffer, messagelen, 100, 0);
-
-  printf("the receiverbuffer massage have %s .\n", receiverbuffer.message);
-  printf("the long is %d .\n", receivelen);
-
-  
-  msgctl(msgid, IPC_RMID, NULL);
-
-  system("ipcs -q");
-  return 0;
-}
-
-#+end_src
-
-#+RESULTS:
-#+begin_example
-
------- Nachrichtenwarteschlangen --------
-Schlüssel msqid      Besitzer   Rechte     Benutzt-Bytes Nachrichten 
-0x61091797 2          silin      777        0            0           
-0x00000000 4          silin      777        0            0           
-0x00000000 5          silin      777        0            0           
-0x00000000 6          silin      777        0            0           
-0x00000000 7          silin      777        0            0           
-0x00000000 8          silin      777        0            0           
-0x00000000 9          silin      777        0            0           
-0x00000000 10         silin      777        0            0           
-0x00000000 11         silin      777        0            0           
-0x00000000 12         silin      777        0            0           
-
-create massage queue success  with msgid 14.
-please input your massage you want to send to massage queue 
-the receiverbuffer massage have
-the long is 6 .
-#+end_example
-
-**** semget
-
-semid = semget(IPC_PRIVATE,3 ,  0777);
-
-**** semctl
-
-semctl(semid, 0, IPC_RMID, NULL);
-
-** Multi Thread
-*** 1 pthread_create.c
-using pthread_create create new thread(thread_fun) with
-arguements("new thread"). In new thread call function print_id with
-giving arguements.
-
-
-This programm can't compiled in Babel, please save this as a .c file, 
-and compile with *-pthread*
-#+begin_src C :results output :exports both
-#include "apue.h"
-
-void print_id(char *s)
-{
-  pid_t pid;
-  pthread_t tid;
-  
-  pid = getpid();
-  tid = pthread_self();
-
-  printf("%s pid is %u, and tid is 0x%x\n", s, pid, (int) tid);
-}
-
-void *thread_fun(void *arg)
-{
-  printf("In son thread, can't get the father tid \n");
-        
-  print_id(arg);
-  return (void *)0;
-}
-
-int main( )
-{
-  pthread_t ntid;
-  int err;
-  err = pthread_create(&ntid, NULL, thread_fun, "new thread");
-  
-  if (err != 0) {
-    printf("create new thread is failed\n");
-    return 0;
-  }
-  printf("In father thread, the new THREAS is 0x%x \n", (int)ntid );
-  
-  print_id("main thread");
-  sleep(2);
-  
-  return 0;
-}
-
-
-#+end_src
-
-#+RESULTS:
-
-*** 2 pthread_id.c
-using pid = getpid() to get pid of current pthread
-#+begin_src C :results output :exports both
-#include <stdio.h>
-#include "unistd.h"
-#include "sys/types.h"
-#include "stdlib.h"
-#include "signal.h"
-#include "sys/msg.h"
-#include "string.h"
-
-int main( )
-{
-  pid_t pid;
-  pthread_t tid;
-
-  pid = getpid();
-  tid = pthread_self();
-
-  printf("pid is %d , and tid is %x\n", pid, (int)tid );
-  return 0;
-}
-
-
-#+end_src
-
-#+RESULTS:
-: pid is 3406 , and tid is 960c4c0
-
-*** 3 pthread_jion.c
-pthread_jion(tid, &reval) 可以回收主线程发起的副线程tid，并由
-副线程指定返回值给reval.但是副线程如自己调用了
-pthread_detach(pthread-self()) 可以阻止主线程的jion
-#+begin_src C
-#include "apue.h"
-
-void *thread_fun1(void *arg){
-  printf("New thread out with return\n");
-  return (void *)1;
-}
-
-void *thread_fun2(void *arg){
-  printf("New thread out with pthread_exit\n");
-  pthread_detach(pthread_self()); // detach it self
-  pthread_exit((void *)2);
-}
-
-
-int main( )
-{
-  pthread_t tid1, tid2;
-  int err1, err2;
-  void  *reval1, *reval2;
-
-  err1 = pthread_create(&tid1, NULL, thread_fun1, NULL); 
-  err2 = pthread_create(&tid2, NULL, thread_fun2, NULL); 
-
-  if (err1 || err2) {
-    printf("The create of new thread is failed\n");
-  }
-
-  printf("the thread 1 has return as %d\n", pthread_join(tid1, &reval1) );
-  printf("the thread 2 has return as %d\n", pthread_join(tid2, &reval2) );
-
-  printf("the thread 1 has return code %d\n",(int*)reval1 );
-  printf("the thread 2 has return code %d\n",(int*)reval2 );
-  
-  return 0;
-}
-
-  
-
-#+end_src
-
-*** 4 pthread_cancel.c
-从主线程来的pthread_cancel(tid)作用到tid的副线程时，
-如果副线程设置为pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL)
-则取消请求被忽视
-
-如果副线程设置为pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-则取消请求在下一个取消点被执行
-
-如果副线程设置为pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-则取消请求被立即执行
-
-#+begin_src C
-  #include "apue.h"
-
-  void *thread_fun(void * arg){
-    int stateval;
-    int typeval;
-
-    //  set cancel to be disable
-    stateval = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-    if (stateval != 0) {
-      printf("set cancel state to disable is failed\n");
-    }
-    printf("I'm New thread here !\n");
-    sleep(4);
-
-
-    //set cancel to be enable, will be canceled at the first cancel point
-    stateval = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-    if (stateval != 0)
-      printf("set cancel state to enable is failed\n");
-    else
-      printf("about to set cancel enable\n");   // print is a cancel point
-
-    //set cancel to be enable and immediately
-    typeval = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-    if (typeval != 0) {
-      printf("set cancel state to immediately failed\n");
-    }
-
-    //cancel points
-    printf("first place to cancel:\n");
-    printf("second place to cancel:\n");
-    return (void *)20;
-  }
-
-
-
-  int main( )
-  {
-    pthread_t tid;
-    int err, cval, jval;
-    void * rval;
-
-    err = pthread_create(&tid, NULL, thread_fun, NULL);
-    if (err != 0) {
-      printf("creat new thread is failed\n");
-      return 0;
-    }
-    sleep(2);
-
-    cval = pthread_cancel(tid);
-    if (cval != 0) {
-      printf("cancel the new thread is failed\n");
-      return 0;
-    }
-  
-    jval = pthread_join(tid, &rval);
-    if (jval != 0) {
-      printf("join thread  is failed\n");
-      return 0;
-    }
-    printf("new thread has return code of %d\n", (int) rval );
-    
-    return 0;
-  }
-
-#+end_src
-*** 5 pthread_rwlock.c
-pthread_rwlock_t rwlock;         声明
-pthread_rwlock_init(&rwlock);    初始化
-pthread_rwlock_wrlock(&rwlock);  写锁
-pthread_rwlock_rdlock(&rwlock);  读锁
-pthread_rwlock_unlock(&rwlock);  解锁
-pthread_rwlock_destroy(&rwlock); 销锁
-
-#+begin_src C
-  #include "apue.h"
-  int num;
   pthread_rwlock_t rwlock;
-
-  void * thread_fun1(void *arg){
-    int err;
-    sleep(1);
-    pthread_rwlock_wrlock(&rwlock);  // write mode lock
-    // pthread_rwlock_rdlock(&rwlock);   // read mode lock
-
-    printf("thread 1 print num as %d\n",num );
-    sleep(5);
-    printf("thread 1 is over \n");
-
-    pthread_rwlock_unlock(&rwlock);
-    return (void *)0;
-  }
-
-  void * thread_fun2(void *arg){
-    int err;
-    pthread_rwlock_wrlock(&rwlock);
-    //  pthread_rwlock_rdlock(&rwlock);
-  
-    printf("thread 2 print num as %d\n",num );
-    sleep(5);
-    printf("thread 2 is over \n");
-  
-    pthread_rwlock_unlock(&rwlock);
-    return (void *)0;
-  }
-
-  int main( )
-  {
-    pthread_t tid1, tid2;
-    int err;
-  
-    err = pthread_rwlock_init(&rwlock, NULL);
-    if (err) {
-      printf("init failed\n");
-      return 0;
-    }
-  
-    err = pthread_create(&tid1, NULL ,thread_fun1, NULL);
-    if (err) {
-      printf("create of the first thread fail\n");
-      return 0;
-    }
-
-    err = pthread_create(&tid2, NULL ,thread_fun2, NULL);
-    if (err) {
-      printf("create of the second thread failed\n");
-      return 0;
-    }
-
-    pthread_join(tid1, NULL);
-    pthread_join(tid2, NULL);
-
-    pthread_rwlock_destroy(&rwlock);
-  
-    return 0;
-  }
-
-
-
-
+  pthread_rwlock_init(&rwlock, NULL);
+  pthread_rwlock_wrlock(&rwlock);   // exclusive
+  pthread_rwlock_rdlock(&rwlock);   // shared
+  pthread_rwlock_unlock(&rwlock);
+  pthread_rwlock_destroy(&rwlock);
 #+end_src
 
-*** 6 pthread_attr.c 
-seeing pthread_attr.c 
-pthread_attr_init(&attr) using :  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-OR:  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);  
-决定该线程是否可以被jion.
+Thread attributes:
 #+begin_src C
-  #include "apue.h"
-
-  void *thread_fun1(void *arg)
-  {
-    printf("I am new thread  1\n");
-    return (void *)1;
-  }
-
-
-  void *thread_fun2(void *arg)
-  {
-    printf("I am new thread  2 \n");
-    return (void *)2;
-  }
-
-  int main(int argc, char *argv[])
-  {
-    pthread_t tid1, tid2;
-    int err;
-
-    //def attr and init and set to be spreate
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    //  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);  
-
-    err = pthread_create(&tid1, &attr, thread_fun1, NULL);
-    if (err) {
-      printf("create new thread 1 failed \n");
-      return 0;
-    }
-  
-    err = pthread_create(&tid2, NULL, thread_fun2, NULL);
-    if (err) {
-      printf("create new thread 2 failed \n");
-      return 0;
-    }
-
-    err = pthread_join(tid1, NULL);
-    if (!err) 
-      printf("join thread 1 success \n");
-    else 
-      printf("jion thread 1 failed \n");
-
-
-    err = pthread_join(tid2, NULL);
-    if (!err) 
-      printf("join thread 2 success \n");
-    else 
-      printf("jion thread 2 failed \n");
-
-    pthread_attr_destroy(&attr);
-  
-    return 0;
-  }
-
-
-
-#+end_src
-
-*** 7 pthread_mutex.c
-pthread_mutex_lock(&mutex) 和 pthread_mutex_unlock(&mutex)
-可以锁住之间的的任何变量， 所以不同线程之间的访问和赋值只能错开时间，
-这样就不会造成线程之间变量值不受控制的错误
-#+begin_src C
-  #include "apue.h"
-
-  struct student{
-    int age;
-    int size;
-  } stu;
-
-  int i;
-  pthread_mutex_t mutex;
-
-  void *thread_fun1(void *arg){
-    while(1){
-      //    pthread_mutex_lock(&mutex);
-      stu.age = i;
-      stu.size = i;
-      i++;
-      if (stu.age != stu.size) {
-        printf("thread 1 %d, %d,\n", stu.age, stu.size);
-        break;
-      }
-      //    pthread_mutex_unlock(&mutex);
-    }
-    return (void *)0;
-  }
-
-
-  void *thread_fun2(void *arg){
-    while (1) {
-      //    pthread_mutex_lock(&mutex);
-      stu.age = i;
-      stu.size = i;
-      i++;
-      if (stu.age != stu.size) {
-        printf("thread 2 %d, %d,\n", stu.age, stu.size);
-      }
-      //    pthread_mutex_unlock(&mutex);
-    }
-    return(void *)0;
-  }
-
-  int main( )
-  {
-    pthread_t tid1, tid2;
-    int err1, err2;
-
-    err1 = pthread_create(&tid1, NULL, thread_fun1, NULL);
-    err2 = pthread_create(&tid2, NULL, thread_fun2, NULL);  
-    if (err1 || err2) {
-      printf("the create o pthread 1 and pthread 2 failed\n");
-    }
-
-    pthread_join(tid1, NULL);
-    pthread_join(tid2, NULL);
-
-    return 0;
-  }
-
-
-#+end_src
-
-*** 8 pthread_interpeter_controll.c
-用主线程给一个可交换变量赋值，来控制副进程的执行，
-only if in main thread, parameter interpeter be assigned to 1, in 
-side thread can start to run.
-#+begin_src C
-  #include <stdio.h>
-  #include "stdlib.h"
-  #include <unistd.h>
-  #include "pthread.h"
-
-  int interpeter = 0;
-
-  void *mythread(void *num){
-    while(interpeter == 0);
-    int i = 0;
-    for (i = 0; i < 10; ++i) {
-      printf("In my thread there is %d\n", i);
-      usleep(100);
-    }
-    return (void *)0;
-  }
-
-  int main(int argc, char *argv[])
-  {
-    pthread_t tid;
-    int err;
-    err = pthread_create(&tid, NULL, mythread, NULL);
-    if (err < 0) {
-      printf("create my thread failed\n");
-      return -1;
-    }
-    int i = 0;
-    for (i = 0; i < 10; ++i) {
-      printf("In main thread there is %d\n", i);
-      usleep(100);
-    }
-    interpeter = 1;
-    sleep(10);
-    return 0;
-  }
-
-
-
-#+end_src
-
-*** 9 pthread_pass_struct.c
-将一个结构体通过pthread_create()的参数传给副进程，注意在副进程中的
-结构体转化
-#+begin_src C
-  #include "apue.h"
-
-  struct student {
-    int age;
-    char name[10];
-    char subject[10];
-  };
-
-  void *thread_fun(void *stu)
-  {
-    printf("In the constuction we have age : %d, name : %s, and subject %s.\n", ((struct  student *)stu)->age,((struct student *)stu)->name, ((struct student *)stu)->subject);
-    return (void *)0;
-  }
-  
-  int main( )
-  {
-    pthread_t tid;
-    int err;
-    void * val;
-  
-    struct student stu;
-    stu.age = 20;
-    memcpy(stu.name, "xiang", 10);
-    memcpy(stu.subject, "phyics", 10);
-
-    err = pthread_create(&tid, NULL, thread_fun, (void *)&stu);
-    if (err != 0) {
-      printf("the new thread is failed to create\n");
-      return  0;
-    }
-    pthread_exit(val);
-    return 0;
-  }
-
-
-
-
-
-#+end_src
-*** 10 pthread_stack_attr.c
-在系统支持的条件下，获取栈的大小，并作出调整
-#+begin_src C
-  #include "apue.h"
-
   pthread_attr_t attr;
-
-  void *thread_fun(void *arg){
-
-    size_t stacksize;
-
-  #ifdef _POSIX_THREAD_ATTR_STACKSIZE
-    pthread_attr_getstacksize(&attr, &stacksize);
-    printf("new thread stack size is %d \n", (int)stacksize );  //获取默认栈大小
-    //更改 has to be greater than 16384, otherwise will be default
-    pthread_attr_setstacksize(&attr, 100000);
-    pthread_attr_getstacksize(&attr, &stacksize);
-    printf("new thread stack size is %d \n", (int)stacksize );  //获取设置栈大小
-  #endif // _POSIX_THREAD_ATTR_STACKSIZE
-  
-
-    return (void *)1;
-  }
-
-
-  int main(int argc, char *argv[])
-  {
-    pthread_t tid;
-    int err;
-
-    pthread_attr_init(&attr);
-
-    //设置为可连接的分离属性
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
-    //check if system support this
-  #ifdef _POSIX_THREAD_ATTR_STACKSIZE
-    pthread_attr_setstacksize(&attr, PTHREAD_STACK_MIN);
-  #endif // _POSIX_THREAD_ATTR_STACKSIZE
-
-    err = pthread_create(&tid, &attr, thread_fun, NULL);
-    if (err) {
-      printf("create new thread failed \n");
-      return 0;
-    }
-    pthread_join(tid ,NULL);
-    return 0;
-  }
-
-
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE); // or DETACHED
+  pthread_attr_setstacksize(&attr, 100000);                    // if _POSIX_THREAD_ATTR_STACKSIZE
+  pthread_create(&tid, &attr, func, arg);
+  pthread_attr_destroy(&attr);
 #+end_src
 
-** Stoket 
-
-* Git
-** tips
-#+begin_src 
-Raw 文件
-git rm --cached file, will only delete it in git, but still in my local directory
-#+end_src
-** Git installation in Linux
-
-1. sudo apt install git
-
-2. local configuration
+* Networking & Servers
+** SSH
 #+begin_src sh
-   git  config --global user.name "username1"
-   git  config --global user.email "email1"
+  ssh user@ip
+  sshpass -p password ssh user@ip       # non-interactive
 #+end_src
-   git  config --list
 
-3. in local terminal
+Passwordless login:
 #+begin_src sh
-   ssh-keygen -t rsa -C "email2"
+  ssh-keygen -t rsa                      # three times Enter
+  ssh-copy-id user@ip
+  ssh-copy-id localhost                  # (username ≠ hostname)
 #+end_src
 
-
-and then just all enter as default
-warming: email1 == email2
-
-** Webconfig
-#+BEGIN_SRC 
-1. go to Fold Docu1, and in terminal git init to create local  repository
-2. apply github count with:
-   Email: email3
-   Username: username3
-   Password:xxxx
-3. in setting add ssh key from local document: ./ssh/id_rsa.pub
-4. create web repository with name Docu2
-   Warming: Docu1 == Docu2
-#+END_SRC
-** Connection
-#+BEGIN_SRC 
-
-1. in local computer Docu1, create our files and prepare to push to
-   Github
-2. git add && git commit -m ""
-3. git remote add origin HTTPS/SSH(of the created web repository)
-   warming: with  HTTPS will be ask the Username:username3 and
-   password:xxxx every time for the push, but SSH note
-4. git push -u origin master
-5. username3 and xxxx if necessary
-6. later push it only use git push origin master
-#+END_SRC
-
-** Magit
-#+BEGIN_SRC 
-C-x g  : open the git buffer
-S or s : to stage
-C      : to commit 
-C-c C-c : to finish commit
-P and p to push
-#+END_SRC
-** Git branch
-*** git branch  创建development分支
-#+begin_src 
-branch 创建 新分支
-创建新的分支： git branch development
-带着全部家当去新的分支： git checkout development
-git add -A 
-git commit -m "development"
-git push -u origin development
-#+end_src
-*** git merge 可以 merge mybranch分支到master分支
-#+begin_src 
-merge 融合分支
-如果此时只有development分支改变，可以直接回到master, 把development分支
-merge 过来   git merge development
-
-git checkout master
-git pull origin master
-git branch --merged
-git merge development
-git push origin master
-#+end_src
-*** 删除mybranch分支
-#+begin_src 
-
-git branch --merged
-git branch -d mybrauch
-git branch -a 
-git push origin --delete mybrauch
-#+end_src
-*** git rm
-**** git rm --cached file
-#+begin_src 
-编辑当前文件后，已提交(已 add),想撤出索引 ：    git rm --cached  file
-after that, I can check the delete file with git status or git diff --cached.
-#+end_src
-**** recover after git rm
-#+begin_src 
-if I want , I can git add * to call all back again, but nothing to commit
-#+end_src
-**** confirm to delete file in local directory
-#+begin_src 
-if I ready want to delete this,
-using rm file  delete the file in local directory, 
-but git status and diff --cached remands this still, 
-only after commit, there's no signal for the deleted file anymore.
-#+end_src
-**** recover after delete in local directory
-#+begin_src 
-git reflog
-git reset --hard ID
-#+end_src
-*** git multi commit
-
-commit 添加提交
-和上次commit提交融合，不产生新的提交记录：  git commit --amend
-*** remote branch
-#+begin_src 
-git checkout -t origin/ui-mockup
+Allow root login: in =/etc/ssh/sshd_config=:
+#+begin_src conf
+  PermitRootLogin yes
+  AllowUsers root otheruser
 #+end_src
 
-** commands to recover
-*** after only save 
-|----------------------+-----------------------------------------------------|
-| git diff             | can see the different comparing to last time commit |
-| git checkout -- file | git diff: NULL, file has been recovered             |
-|----------------------+-----------------------------------------------------|
-
-*** after git add file
-|----------------------+---------------------------------------------------------|
-| git diff             | dit diff :NULL                                          |
-| git diff --cached    | can see the different comparing to the last time commit |
-| git reset HEAD file  | git diff -- cached : NULL                               |
-| git checkout -- file | file has been recovered                                 |
-|----------------------+---------------------------------------------------------|
-
-*** after git commit file
-
-#+begin_src 
-
-编辑后，强制回到最近一次添加索引的版本：        git reset --hard HEAD
-编辑后，强制回到最近倒数第二次添加索引的版本：   git reset --hard HEAD~
-编辑后，强制回到最近倒数第n次添加索引的版本：    git reset --hard HEAD~n
-
-如果将HEAD换成对应的ID， 也可以回到之前相应的版本。 但是如果想再回去，
-又没有记住之前的ID， 可以用，       git reflog 查询.
-#+end_src
-
-* GWDG
-1. as student of Göttingen send email to support@gwdg.de with uni email, asking for freischaltung of cloud server  
-2. got https://gwdg.de Dienst-> GWDG cloud server -> self service create Instance
-   if with my ssh, the connect can be without password, but still need to aktiv
-3. where the instance is created, use the VNS to aktiv the konto, remember to save the password
-   ssh cloud@ip
-* Cloud Server
-- create VM
-- VPC network -> Extranal IP -> Static IP
-- Network service -> Cloud DNS -> Create Zone -> new -> AAA and Cname -> copy the server name to Godady
-
-
-* Certificate
-- First generate the self-singed certificate: Set CN to localhost,
-  #+begin_src
-    openssl req -new -x509 -nodes -keyout key.pem -sha256 -days 365 -out cert.pem
-    sudo cp cert.pem /etc/pki/ca-trust/source/anchors/
-    sudo update-ca-trust
-  #+end_src
-
-- First generate a new key, and Then create a CSR from it:
-  #+begin_src
-    openssl genrsa -out test.key 2048
-    openssl req -new -key test.key -out test.csr
-  #+end_src
-
-- creat extenation file test.ext, for domain name or DNS
-  #+begin_src
-1 authorityKeyIdentifier=keyid,issuer
-2 basicConstraints=CA:FALSE
-3 keyUsage =digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-4 subjectAltName = @alt_names
-5
-6 [alt_names]
-7 DNS.1 = localhost
-8 DNS.2 = test.dev
-  #+end_src
-
-- Create a new signed certificate for extended information
-  #+begin_src
-openssl x509 -req -in test.csr -CA cert.pem -CAkey key.pem -CAcreateserial \
--out test.crt -days 365 -sha256 -extfile test.ext    
-  #+end_src
-
-- signed by Let's Encrypt
-    #+begin_src
-      sudo certbot certonly --standalone
-    #+end_src
-
-- DONe
-
-* Problem
-** System limit for number of file watchers reached
-sudo sysctl -w fs.inotify.max_user_watches=100000
-reboot
-
+** Docker
+Install: https://docs.docker.com/engine/install/ubuntu/
+NVIDIA container toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 
 #+begin_src sh
-  ls
-#+end_src
-* Docker
-#+begin_src sh
+  sudo groupadd docker
+  sudo gpasswd -a $USER docker
+  sudo systemctl restart docker
+
+  docker pull image
+  docker run -it --gpus all image /bin/bash
+
+  # Cleanup
   sudo docker rm $(sudo docker ps -aq)
   sudo docker rmi $(sudo docker images -aq)
 #+end_src
 
-** Install docker and nvidia docker toolkit
-- install docker [[https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository][link]]
-- install nvidia docker toolkit [[https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installing-with-apt][link]]
+** UWSGI + Nginx + Django
+References:
+- https://tonyteaches.tech/django-nginx-uwsgi-tutorial/
+- https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04
 
+*Setup:*
+1. Ensure =python manage.py runserver= works
+2. Install uwsgi (not in venv): =sudo pip install uwsgi=
+3. Test: =uwsgi --http :8000 --module project.wsgi=
+4. Config at =/etc/uwsgi/apps-available/project.ini=:
+   #+begin_src ini
+     [uwsgi]
+     chdir = /home/user/project
+     module = project.wsgi
+     home = /home/user/venv
+     master = true
+     processes = 10
+     socket = /home/user/project/project.sock
+     chmod-socket = 666
+     vacuum = true
+     logto = /var/log/uwsgi/project.log
+   #+end_src
+5. Nginx config:
+   #+begin_src nginx
+     upstream django {
+         server unix:///home/user/project/project.sock;
+     }
+     server {
+         listen 80;
+         server_name example.com;
+         location /static { alias /home/user/project/static; }
+         location /media  { alias /home/user/project/media; }
+         location / {
+             uwsgi_pass django;
+             include /home/user/project/uwsgi_params;
+         }
+     }
+   #+end_src
+6. Systemd service at =/etc/systemd/system/uwsgi.service=:
+   #+begin_src ini
+     [Unit]
+     Description=uWSGI Emperor service
+     [Service]
+     ExecStartPre=/bin/bash -c 'mkdir -p /run/uwsgi; chown user:user /run/uwsgi'
+     ExecStart=/usr/local/bin/uwsgi --emperor /etc/uwsgi/apps-enabled
+     Restart=always
+     KillSignal=SIGQUIT
+     Type=notify
+     NotifyAccess=all
+     [Install]
+     WantedBy=multi-user.target
+   #+end_src
+7. Enable: =sudo systemctl start uwsgi && sudo systemctl enable uwsgi=
+
+** SSL / TLS Certificates
+Self-signed:
 #+begin_src sh
-  sudo groupadd docker  
-  sudo gpasswd -a $USER docker
-  docker pull ...
-  sudo systemctl restart docker
-  docekr run -it --gpus all dockerimages /bin/bash
+  openssl req -new -x509 -nodes -keyout key.pem -sha256 -days 365 -out cert.pem
+  sudo cp cert.pem /etc/pki/ca-trust/source/anchors/
+  sudo update-ca-trust
 #+end_src
 
-* UWSGI
-** Reference
-- [[https://tonyteaches.tech/django-nginx-uwsgi-tutorial/][How to Set Up Django on Nginx with uWSGI]]
-- [[https://medium.com/all-about-django/deploying-django-applications-in-production-with-uwsgi-and-nginx-78aac8c0f735][Deploying Django applications in production with uwsgi and nginx]]
-- [[https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04][How To Secure Nginx with Let's Encrypt on Ubuntu 20.04]]
-
-** steps
-*** python manage.py runserver should work
-*** uwsgi
-- install  not in virtual envirement
+Create CSR and sign with extension file:
 #+begin_src sh
-  sudo apt-get install python3.8-dev
-  sudo apt-get install python3.10-dev
-  sudo apt-get install gcc
-  sudo pip install uwsgi
+  openssl genrsa -out test.key 2048
+  openssl req -new -key test.key -out test.csr
+  # Create test.ext with SAN entries, then:
+  openssl x509 -req -in test.csr -CA cert.pem -CAkey key.pem -CAcreateserial \
+    -out test.crt -days 365 -sha256 -extfile test.ext
 #+end_src
 
-- test
-  #+begin_src sh
-    uwsgi --http :8000 --module projectname.wsgi
-  #+end_src
-  go to 8000 port and check, if remote use port rediect
-  #+begin_src sh
-    ssh -L 8000:127.0.0.1:8000 username@ip
-  #+end_src
-
-- config: /etc/uwsgi/apps-avaiable/project.ini
-  #+begin_src text
-    [uwsgi]
-    uid = ubuntu
-    gid = ubuntu
-    # full path to Django project's root directory
-    chdir            = /home/udoms/microdomains/
-    # Django's wsgi file
-    module           = microdomains.wsgi
-    # full path to python virtual env
-    home             = /home/udoms/venv
-    # enable uwsgi master process
-    master          = true
-    # maximum number of worker processes
-    processes       = 10
-    # the socket (use the full path to be safe
-    socket          = /home/..../project.sock
-    # socket permissions
-    chmod-socket    = 666
-    # clear environment on exit
-    vacuum          = true
-    # daemonize uwsgi and write messages into given log
-    logto = /var/log/uwsgi/hpcproject.log
-  #+end_src
-- set the log directory
-    #+begin_src text
-      cd /var/log
-      sudo mkdir -p uwsgi
-      sudo chown -R ubuntu:ubuntu uwsgi/
-    #+end_src
-- test after configation
-    #+begin_src text
-      cd /etc/uwsgi/apps-available/
-      uwsgi --ini movies.ini              
-    #+end_src
-check the log content with sudo tail -10f /var/log/uwsgi/project.log
-if correct, enable it with soft link to apps-enable
-
-*** nginx
-- username
-  #+begin_src text
-   # sudo vim /etc/nginx/nginx.conf
-   user cloud;      # instead of www-data
-            
-  #+end_src
-
-- nginx site-avaiable file 
-#+begin_src tex
-  upstream django {
-      server unix:///home/..../project/project.sock;
-  }
-
-    server {
-        listen  80;
-        server_name DomainName DNS;
-        charset     utf-8;
-        # max upload size
-        client_max_body_size 75M;
-        location /media  {
-            alias /home/..../project/media;
-        }
-        location /static {
-            alias /home/..../project/static;
-        }
-        # Send all non-media requests to the Django server.
-        location / {
-            uwsgi_pass  django;
-            include     /home/..../project/uwsgi_params;
-        }
-      }
+Let's Encrypt:
+#+begin_src sh
+  sudo certbot certonly --standalone -d example.com
 #+end_src
-- *be careful, the socket path should match*
-- last line uwsgi_params is in the project root directory
- #+begin_src text
-   uwsgi_param  QUERY_STRING       $query_string;
-   uwsgi_param  REQUEST_METHOD     $request_method;
-   uwsgi_param  CONTENT_TYPE       $content_type;
-   uwsgi_param  CONTENT_LENGTH     $content_length;
-   uwsgi_param  REQUEST_URI        $request_uri;
-   uwsgi_param  PATH_INFO          $document_uri;
-   uwsgi_param  DOCUMENT_ROOT      $document_root;
-   uwsgi_param  SERVER_PROTOCOL    $server_protocol;
-   uwsgi_param  REQUEST_SCHEME     $scheme;
-   uwsgi_param  HTTPS              $https if_not_empty;
-   uwsgi_param  REMOTE_ADDR        $remote_addr;
-   uwsgi_param  REMOTE_PORT        $remote_port;
-   uwsgi_param  SERVER_PORT        $server_port;
-   uwsgi_param  SERVER_NAME        $server_name;
- #+end_src
 
- sudo ln -s source des
- - enable the nginx configation file and test a picture in media
+** GWDG Cloud Server
+1. Email support@gwdg.de with university email to request cloud server activation
+2. GWDG website → Cloud Server → Self-service → Create Instance
+3. Use VNC to activate account; save password
+4. Connect: =ssh cloud@ip=
 
-*** service
-- create service file with sudo vim /etc/systemd/system/uwsgi.service
-
-  #+begin_src text
-    [Unit]
-    Description=uWSGI Emperor service
-
-    [Service]
-    ExecStartPre=/bin/bash -c 'mkdir -p /run/uwsgi; chown ubuntu:ubuntu /run/uwsgi'
-    ExecStart=/usr/local/bin/uwsgi --emperor /etc/uwsgi/apps-enabled
-    Restart=always #make sure the server is running
-    KillSignal=SIGQUIT
-    Type=notify
-    NotifyAccess=all
-            
-    [Install]
-    WantedBy=multi-user.target
-  #+end_src
-*be careful for the path of uwsgi*
-- start service and enable it
-  #+begin_src sh
-    sudo systemctl start uwsgi.
-    sudo systemctl restart uwsgi.
-    sudo systemctl enable uwsgi.
-  #+end_src
-
-** ssl
-sudo certbot -d -d -d
-
-
-* opencv
-sudo cmake -DCMAKE_INSTALL_PREFIX:PATH=/home/si/Dokumente/opencv/libopencv ..
-make
-make install
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/si/Dokumente/opencv/libopencv/lib
-
-* Warp
-|--------+-----------------------------------------------|
-| Ctrl f | move cousur to left, accept the auto complete |
-| Ctrl N | next block                                    |
-| Ctrl P | provious block                                |
-
-
-* linux dynamic compile ::Am [2024-03-08 Fr]
+* Software
 :PROPERTIES:
-:ID:       21a99730-552a-4aa5-a702-5c937f603a10
+:ID:       95D40680-B476-44AC-90EA-0EC5243D3B36
 :END:
+** PDF
+*** Okular
 #+begin_src sh
-  gcc -c add.c sub.c mult.c divi.c
-  gcc -Wall -fPIC -c add.c sub.c mult.c divi.c
-  gcc -shared -o libmymath.so add.o sub.o mult.o divi.o
+  sudo apt-get install okular
 #+end_src
-- only compile to individule object file, but do not link, better with -fpic, position independent
-- conbine object files to shared library
+| key      | action            |
+|----------+-------------------|
+| F2       | customize         |
+| F7       | presentation mode |
+| C-g g    | go to page        |
+| C-n / p  | next / prev page  |
+| M-n / p  | scroll down / up  |
+| C-b C-b 1| add note          |
+| SPC-b    | add bookmark      |
+| SPC-SPC  | rename bookmark   |
 
+*** evince
 #+begin_src sh
-  gcc -I . -c mathDemo.c
-  gcc -L/home/si/Dropbox/c/dynamiccompile -Wl,-rpath=/home/si/Dropbox/c/dynamiccompile -Wall -o mathDynamic mathDemo.o  -lmymath
- #+end_src
--I . lets our application to find the shared library  header file. copy it from source code
- or with one shoting
- #+begin_src sh
-  gcc -L/home/si/Dropbox/c/dynamiccompile -Wl,-rpath=/home/si/Dropbox/c/dynamiccompile -Wall -o mathDynamic mathDemo.c  -lmymath
+  evince file.pdf
 #+end_src
-+ be careful, in the application we should use #include "mymath.h", not #include <mymath.h> if using one shotting
-+ for compile
-  - -L/home/si/Dropbox/c/dynamiccompile: specified the folder for shared library
-  - -lmymath: specified the library name in specified shared library folder
-  - togethor: link object files to executable file. -L/home/si/Dropbox/c/dynamiccompile -lmymath  tells linker to find libmymath.so in -L position
-+ for runtime using shared library
-  - 1. put shared library it into LD_LIBRARY_PATH. 
-  - 2, use -Wl, -rpath= for specified folder
-  - For Golang, can only set LD_LIBRARY_PATH, such as LD_LIBRARY_PATH=`pwd`/lib ./mycuda. Because we can not compile C with -Wl, -rpath 
 
-
+*** Ghostscript (gs)
+Remove active content:
 #+begin_src sh
-    gcc -c -fPIC add.c && \
-    gcc -shared -o libmymath.so add.o sub.o mult.o divi.o && \
-    gcc -L/home/si/Dropbox/c/dynamiccompile -Wl,-rpath=/home/si/Dropbox/c/dynamiccompile  -Wall -o mathDynamic mathDemo.o -lmymath  && \
-    ./mathDynamic
+  gs -dNOPAUSE -sDEVICE=pdfwrite -sOUTPUTFILE=out.pdf -dBATCH in.pdf
 #+end_src
-if such as we made some modification in add.c, recompile add.c, reconstruct shared library, relink it
+
+Compress:
+#+begin_src sh
+  gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/prepress \
+     -dNOPAUSE -dQUIET -dBATCH -sOutputFile=compressed.pdf input.pdf
+#+end_src
+
+*** xournal
+#+begin_src sh
+  sudo apt install xournal
+#+end_src
+
+** Media
+*** mpv
+#+begin_src sh
+  sudo apt install mpv
+#+end_src
+
+Config at =~/.config/mpv/mpv.conf= — key options:
+#+begin_src conf
+  no-osd-bar
+  save-position-on-quit
+  no-border
+  hwdec=auto
+  autofit-larger=92%
+  sub-auto=fuzzy
+  sub-text-font-size=40
+  screenshot-format=png
+#+end_src
+
+For autoload playlist, use: https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/autoload.lua
+
+*** simplescreenrecorder
+#+begin_src sh
+  sudo apt install simplescreenrecorder
+  alias ssr='simplescreenrecorder'
+  # Ctrl+Shift+Alt+V to start/pause
+#+end_src
+
+*** kmplayer
+#+begin_src sh
+  sudo apt install kmplayer
+#+end_src
+
+** Dictionary (stardict)
+#+begin_src sh
+  sudo apt install stardict sdcv
+  # Download dictionaries from http://download.huzheng.org/
+  # Extract and place in /usr/share/stardict/dic/
+  bzip2 -dk *.bz2
+  for i in *.tar.bz2; do sudo tar -xjvf "$i" -C /usr/share/stardict/dic; done
+#+end_src
+
+** Email (thunderbird)
+- =Alt= to open menubar
+- Filter rules: =~/.thunderbird/PROFILE/ImapMail/imap.gmail.com/msgFilterRules.dat=
+
+** GPG
+| action            | command                                     |
+|-------------------+---------------------------------------------|
+| list secret keys | gpg --list-secret-keys                      |
+| encrypt (terminal)| gpg -r user -e file                        |
+| decrypt (terminal)| gpg -d file.gpg                            |
+| encrypt (Emacs)  | epa-encrypt-file                            |
+| decrypt (Emacs)  | epa-decrypt-file                            |
+| verify            | gpg --verify file.gpg                       |
+
+** IPFS
+#+begin_src sh
+  # Install go-ipfs, then:
+  ipfs init
+  ipfs config edit
+  ipfs id
+
+  # Add and retrieve
+  echo "hello" > file.txt
+  ipfs add file.txt              # get hash
+  ipfs cat <hash>
+
+  # Publish directory
+  ipfs add -r .
+  ipfs name publish <dir_hash>
+
+  # Web UI: http://localhost:5001/webui
+#+end_src
+
+** Fcitx (Chinese Input)
+#+begin_src sh
+  sudo apt install fcitx
+  # Download sougou .deb, then:
+  sudo dpkg -i sougou*.deb
+  sudo apt --fix-broken install
+  # Set fcitx as global input method
+  export LC_CTYPE=zh_CN.UTF-8
+#+end_src
+
+** Graphviz (dot)
+#+begin_src sh
+  dot -Tpng -O file.dot
+#+end_src
+
+** KDE Connect (Linux ↔ Android)
+Install on both devices; same network → auto-discovery. Files land in =Downloads/=.
+
+** Photopea (Web-based image editor)
+- Upload image → Image → Adjustments → Levels → click white dropper on background
+- Remove background: Magic Wand → uncheck "Contiguous" → Delete
+
+** File Manager (ranger)
+#+begin_src sh
+  apt install ranger
+#+end_src
+
+** Image Viewer (eog)
+#+begin_src sh
+  eog image.png
+#+end_src
+
+** Warp Terminal
+|--------+-------------------------------------|
+| Ctrl+f | accept autocomplete / move left     |
+| Ctrl+n | next block                          |
+| Ctrl+p | previous block                      |
+|--------+-------------------------------------|
+
+* Git
+** Setup
+#+begin_src sh
+  sudo apt install git
+  git config --global user.name "name"
+  git config --global user.email "email"
+  ssh-keygen -t rsa -C "email"           # add pubkey to GitHub
+#+end_src
+
+** Basic Workflow
+#+begin_src sh
+  git init
+  git remote add origin git@github.com:user/repo.git
+  git add -A
+  git commit -m "message"
+  git push -u origin master
+#+end_src
+
+Amend last commit (no new commit record):
+#+begin_src sh
+  git commit --amend
+#+end_src
+
+** Branching
+#+begin_src sh
+  git branch development
+  git checkout development
+  # ... work, commit, push ...
+  git push -u origin development
+
+  # Merge to master
+  git checkout master
+  git pull origin master
+  git merge development
+  git push origin master
+
+  # Delete branch
+  git branch -d development
+  git push origin --delete development
+#+end_src
+
+Track remote branch:
+#+begin_src sh
+  git checkout -t origin/ui-mockup
+#+end_src
+
+** Recovery
+| state             | undo command                  |
+|-------------------+-------------------------------|
+| modified (unstaged)| git checkout -- file         |
+| staged            | git reset HEAD file           |
+| committed         | git reset --hard HEAD~1       |
+| deleted (local)   | git reflog → git reset --hard <id> |
+| remove from index | git rm --cached file          |
+
+** Magit (Emacs)
+| key     | action        |
+|---------+---------------|
+| C-x g   | open magit    |
+| s / S   | stage         |
+| c       | commit        |
+| C-c C-c | finish commit |
+| P p     | push          |
+
+** GitHub
+Raw file URL: append =?raw=true= or use the "Raw" button.
+
+* Troubleshooting
+** System limit for number of file watchers reached
+#+begin_src sh
+  sudo sysctl -w fs.inotify.max_user_watches=100000
+#+end_src
+
+** Right-click on touchpad not working
+#+begin_src sh
+  gsettings set org.gnome.desktop.peripherals.touchpad click-method areas
+#+end_src
+
+** Package manager lock / broken packages
+#+begin_src sh
+  sudo apt --fix-broken install
+#+end_src

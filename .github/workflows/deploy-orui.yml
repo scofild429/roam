@@ -22,3 +22,4 @@ jobs:
         with:
           org-roam-db-filename: org-roam.db
           deploy-to-pages: true
+          site-title: "Xiang Roam"
