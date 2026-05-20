@@ -1,1 +1,10 @@
 /Note
+/daily
+/.antigravitycli
+/.deepseek
+/.vscode
+/.idea
+/.DS_Store
+/venv
+/__pycache__
+.vorg.db

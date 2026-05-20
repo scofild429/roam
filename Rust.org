@@ -1,0 +1,166 @@
+:PROPERTIES:
+:ID:       98595F3E-F152-41EB-96FD-99AB77270033
+:END:
+#+title: Rust
+
+* The combination of pub use mod
+** 1. in the same file
+mod code and the calling in the same file, can direct all it.
+
+#+BEGIN_SRC rust
+// main.rs
+mod garden{
+  pb fn test(){};
+};
+fn main () {
+    garden::test();
+}
+
+#+END_SRC
+** 2. file instead of mod
+put all rust code in a file, no mod key word needed in this file. We can put this file as a mod in other file (in the same directory) by using mod file name without .rs postfix.
+
+#+BEGIN_SRC rust
+// network.rs no mod key word
+pub fn test(){};
+// main.rs
+mod network;
+fn main() {
+    network::test();
+}
+#+END_SRC
+** 3. file and folder as mod
+file is still used as case 2 as modular, include sub modular files in the same named folder
+
+#+BEGIN_SRC rust
+// dep/submod1.rs no mod key word
+pub fn test(){};
+// dep/submod2.rf no mod key word
+// dep.rs 
+pub mod submod1;
+pub mod submod2;
+//main.rs
+mod dep;
+fn main () {
+  dep::submod1::test();
+}
+#+END_SRC
+** 4. use for shortcuts
+in the 3. case we shortcut the =dep::submod1::test() as
+
+#+BEGIN_SRC rust
+// ....
+// main.rs 
+mod dep;
+use dep::submod1::test;
+fn main () {
+    test()
+}
+
+#+END_SRC
+** 5. Re-exporting with pub use in a closed system,
+*** nested folder
+
+#+BEGIN_EXAMPLE
+src/
+├── main.rs
+├── local.rs
+└── local/
+    ├── dep.rs
+    └── dep/
+        ├── submod1.rs
+        └── submod2.rs
+#+END_EXAMPLE
+
+#+BEGIN_SRC rust
+// --- src/local/dep/submod1.rs ---
+pub fn test() {}
+
+// --- src/local/dep/submod2.rs ---
+// (Empty or other code)
+
+// --- src/local/dep.rs ---
+mod submod1;
+mod submod2;
+
+// Perfect! You re-exported `test`
+pub use self::submod1::test; 
+
+// --- src/local.rs ---
+// You must declare `dep` here so `local` knows it exists.
+pub mod dep; 
+
+// --- src/main.rs ---
+// 1. Declare the `local` module to attach `local.rs` to the tree
+mod local; 
+
+// 2. Bring your re-exported function into scope
+use local::dep::test;
+
+fn main() {
+    test(); // It works!
+}
+
+#+END_SRC
+***
+*** in a library called =my_app=
+
+#+BEGIN_EXAMPLE
+src/
+├── main.rs
+├── lib.rs            <-- This acts as the root of your library
+├── dep.rs
+└── dep/
+    ├── submod1.rs
+    └── submod2.rs
+#+END_EXAMPLE 
+
+#+BEGIN_SRC rust
+// --- src/dep/submod1.rs ---
+pub fn test() {}
+
+// --- src/dep.rs ---
+mod submod1;
+mod submod2;
+pub use self::submod1::test;
+
+// --- src/lib.rs ---
+// This file IS the root of your library. 
+// You don't need `pub mod local;`, you just expose your internal modules directly.
+pub mod dep;
+
+// --- src/main.rs ---
+// Because main.rs and lib.rs are separate, main.rs must import the library
+// using the crate name from Cargo.toml ("my_awesome_app").
+use my_awesome_app::dep::test;
+
+fn main() {
+    test(); 
+}
+#+END_SRC
+*
+*
+
+
+* Notes
+:PROPERTIES:
+:ID:       E7B0165D-C715-4A8C-B10E-717BA1C91FED
+:END:
+
+- **基本类型在 Rust 中赋值是以 Copy 的形式**
+- **切片和切片引用**： []是超类型，可以有任意的长度类型，&[]是使用任意长度类型[]的操作手柄，而&[T]范型则拓展这个规则到任意的代指类型（长度擦除（Unsized） + 指针间接访问（Reference） + 类型参数化（Generics）
+- Self and self  
+  - Self在impl和srait中代指相应类型并可生成其实例。
+  - self在impl和trait中转化实例，原实例被消费
+  - &self和& mut self用于常见的实例访问和修改
+
+- in RUST, if all the fields of a structure(enum) has some kind of Trait, so the structure(enum) can also has this Trait(need deriver if is not elemental type of Rust).
+
+- 如果只需要同质（相同类型）集合，可以采用泛型+特征约束这种写法,
+  - **特征对象几乎总是使用引用的方式** ，如 `&dyn Draw`、`Box<dyn Draw>`
+
+  - **`btn` 是哪个特征对象的实例，它的 `vtable` 中就只包含了该特征的方法**
+
+  - 不是所有特征都能拥有特征对象，只有对象安全的特征才行。当一个特征的所有方法都有如下属性时，它的对象才是安全的：
+    - 方法的返回类型不能是 `Self`
+    - 方法没有任何泛型参数
