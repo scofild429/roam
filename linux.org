@@ -895,7 +895,7 @@ Track remote branch:
 ** GitHub
 Raw file URL: append =?raw=true= or use the "Raw" button.
 
-* Troubleshooting
+* Troubleshooting collection
 ** System limit for number of file watchers reached
 #+begin_src sh
   sudo sysctl -w fs.inotify.max_user_watches=100000
