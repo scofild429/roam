@@ -3,7 +3,10 @@
 :END:
 #+title: Rust
 
-* The combination of pub use mod
+* rust pub use mod
+:PROPERTIES:
+:ID:       14572E13-097B-413F-8982-33BA0F804B65
+:END:
 ** 1. in the same file
 mod code and the calling in the same file, can direct all it.
 
@@ -140,7 +143,6 @@ fn main() {
 #+END_SRC
 *
 *
-
 
 * Notes
 :PROPERTIES:
