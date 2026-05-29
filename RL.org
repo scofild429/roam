@@ -47,7 +47,6 @@
   p(r_{t+1} \mid a_{t}, s_t)
   \]
  
-
 * Bellman Equation
 - *Return* : summary of all discount return in one complete trajectory
   
@@ -62,7 +61,6 @@
 
 - *Bellman Optimality Equation* is bellman equation with the best policy
  
-
 
 
 
@@ -100,7 +98,6 @@ Once we know exactly how good the current policy $\pi_k$ is (from Phase 1), we m
 The mathematical connection is defined by the depth of the evaluation step (the number of iterations $j$ in Phase 1):
 - **Value Iteration** is a special case of Truncated Policy Iteration where the evaluation depth is $j=1$.
 - **Policy Iteration** is the limit of Truncated Policy Iteration where the evaluation depth $j \to \infty$.
-
 
 
 * Monte Carlo Methods in RL
@@ -143,7 +140,6 @@ Model-free, without knowing the model, we use the expectation of samples from MC
        - **Mechanism**: With probability $1 - \epsilon$, the agent chooses the best known action.
 
    - **Continuous Learning**: Even if the agent always starts at the same spot (Start Line), the stochastic nature of the policy ($\epsilon$) ensures that over many episodes, it will eventually drift into unvisited states.
-
 
 * Temporal Difference
 :PROPERTIES:
@@ -263,7 +259,6 @@ $$q_{t+1}(s_t, a_t) = q_t(s_t, a_t) - \alpha_t(s_t, a_t) [ q_t(s_t, a_t) - \bar{
      Set $w_T = w$ every $C$ iterations.
 
 
-
 * Policy Gradient
 :PROPERTIES:
 :ID:       4711B696-A708-4093-A33A-5CEF4EDA902C
@@ -337,7 +332,6 @@ Monte Carlo Policy Gradient
       - $G_t \leftarrow \sum_{k=t+1}^{T} \gamma^{k-t-1} r_k$  (Calculate return)
       - $\theta_{t} \leftarrow \theta_{t} + \alpha \gamma^t G_t \nabla_{\theta} \ln \pi(a_t | s_t, \theta_{k})$
  - $\theta_{k} \leftarrow \theta_{t}$
-
 
 
 
@@ -434,7 +428,6 @@ Because of the log-derivative trick:
 $$ \theta_{t+1} = \theta_t + \alpha \frac{\delta_t(s_t, a_t)}{\beta(a_{t}|s_{t})} \nabla_{\theta} \pi(a_t \mid s_t, \theta_t) $$
 
 Algorithm is similar only with difference of factor $\beta(a_{t}|s_{t})$
-
 
 
 
@@ -810,8 +803,6 @@ for batch_prompts in dataset:
 
 #+end_src
 
-
-
 * GRPO
 
 #+begin_src mermaid :file ./html/reinforcement_learning_grpo.png
@@ -862,6 +853,59 @@ in order to train all Experts P,
 - DeepSeek use bias parameter before active function for dynamical adjustment of token loading for each expert    
 
 
+
+* DPO
+** Mathflow
+在大型语言模型 (LLM) 的对齐 (Alignment) 过程中，DPO 避免了复杂的强化学习，其核心数学思想可以总结为以下极其优雅的逻辑闭环：
+
+*** 1. 逻辑概括
+- **目标转换**：在 RLHF 中，原始目标是最大化奖励同时受到 KL 散度惩罚。经过数学推导，这完全等价于最小化当前策略与理论最优策略 $\pi^*$ 之间的 KL 散度。
+- **反向定义奖励**：在这个极值约束条件（KL 散度为 0）下，可以从理论最优策略的公式中，反向推导出完全由模型自身概率表达的“隐式奖励”函数。
+- **消除配分函数**：将这个“隐式奖励”代入人类偏好模型（Bradley-Terry 模型）中，相减操作完美抵消了在真实世界中极难计算的配分函数 $Z(x)$。
+- **最大似然估计**：最终，使用计算出的偏好概率进行交叉熵分类，直接更新大语言模型的参数。通过这种方式，DPO 将强化学习的“试错与探索”转变成了监督学习的“拟合完美分布”。
+
+*** 2. 数学推导全过程
+- **原始目标：定义优化方向**
+  RLHF 的原始目标是让回答获得最大奖励 $r(x,y)$，同时不能偏离参考模型 $\pi_{ref}$ 太远：
+  $$ \max_{\pi_{\theta}} \mathbb{E}_{x \sim \mathcal{D}, y \sim \pi_{\theta}(\cdot|x)} \left[ r(x, y) \right] - \beta \mathbb{D}_{KL} \left[ \pi_{\theta}(\cdot|x) || \pi_{ref}(\cdot|x) \right] $$
+
+- **极值约束：推导理论最优策略 (从 Max 到 Min 的转换)**
+  为了找到理论最优策略，我们对原始目标函数进行代数变形。首先，将奖励项转化为对数形式并提取 $\beta$：
+  $$ \max_{\pi_\theta} \beta \, \mathbb{E}_{y \sim \pi_\theta} \left[ \log \exp\left(\frac{r(x,y)}{\beta}\right) - \log \frac{\pi_\theta(y|x)}{\pi_{ref}(y|x)} \right] $$
+  
+  合并对数项：
+  $$ \max_{\pi_\theta} \beta \, \mathbb{E}_{y \sim \pi_\theta} \left[ \log \frac{\pi_{ref}(y|x) \exp(\frac{r(x,y)}{\beta})}{\pi_\theta(y|x)} \right] $$
+
+  为了在分子中构造一个合法的概率分布，引入归一化常数（配分函数） $Z(x) = \sum_y \pi_{ref}(y|x) \exp\left(\frac{r(x,y)}{\beta}\right)$，并定义理论最优策略（完美模范分布）：
+  $$ \pi^*(y|x) = \frac{1}{Z(x)} \pi_{ref}(y|x) \exp\left(\frac{r(x,y)}{\beta}\right) $$
+
+  此时分子可以替换为 $Z(x) \pi^*(y|x)$，并将对数乘法拆解（注意是加上 $\log Z(x)$）：
+  $$ \max_{\pi_\theta} \beta \, \mathbb{E}_{y \sim \pi_\theta} \left[ \log \frac{\pi^*(y|x)}{\pi_\theta(y|x)} \right] + \beta \log Z(x) $$
+
+  将对数内的分子分母翻转，提取负号以匹配 KL 散度的标准定义 $\mathbb{D}_{KL}(P||Q) = \mathbb{E}[\log(P/Q)]$：
+  $$ \max_{\pi_\theta} \left( -\beta \, \mathbb{D}_{KL} (\pi_\theta(y|x) || \pi^*(y|x)) + \beta \log Z(x) \right) $$
+
+  最大化一个函数等价于最小化其相反数，这导致整体符号翻转（Max 视角转为 Min 视角）：
+  $$ \min_{\pi_\theta} \left( \beta \, \mathbb{D}_{KL} (\pi_\theta(y|x) || \pi^*(y|x)) - \beta \log Z(x) \right) $$
+
+  由于 $Z(x)$ 不包含待优化参数 $\theta$，它对梯度计算没有影响。因此我们证明了，原始最大化目标完全等价于：
+  $$ \min_{\pi_\theta} \mathbb{D}_{KL} (\pi_\theta(y|x) || \pi^*(y|x)) $$
+  且当 KL 散度为 0 时，得到唯一的理论最优解 $\pi^*$。
+
+- **变量代换：反向定义隐式奖励**
+  由于算不出 $Z(x)$，我们将 $\pi^*$ 的定义式两边取对数，反向求出奖励函数 $r(x,y)$：
+  $$ r(x,y) = \beta \log \frac{\pi^*(y|x)}{\pi_{ref}(y|x)} + \beta \log Z(x) $$
+  在这里，我们将理论最优 $\pi^*$ 直接替换为我们正在训练的当前模型 $\pi_\theta$，得到了完全由模型自身概率表达的隐式奖励（Implicit Reward）。
+
+- **消除配分函数：代入人类偏好模型**
+  人类偏好数据符合 Bradley-Terry 模型（Sigmoid 函数 $\sigma$）：
+  $$ P(y_w \succ y_l | x) = \sigma(r(x, y_w) - r(x, y_l)) $$
+  将上一步的隐式奖励代入，相减时常数项 $\beta \log Z(x)$ 被完美抵消：
+  $$ P(y_w \succ y_l | x) = \sigma \left( \beta \log \frac{\pi_{\theta}(y_w|x)}{\pi_{ref}(y_w|x)} - \beta \log \frac{\pi_{\theta}(y_l|x)}{\pi_{ref}(y_l|x)} \right) $$
+
+- **最终目标：最大似然估计与 Loss 函数**
+  为了让当前模型符合人类偏好，我们对上述偏好概率取负对数（最大似然估计），得到最终的 DPO 损失函数：
+  $$ \mathcal{L}_{DPO}(\pi_{\theta}; \pi_{ref}) = - \mathbb{E}_{(x, y_w, y_l)} \left[ \log \sigma \left( \beta \log \frac{\pi_{\theta}(y_w|x)}{\pi_{ref}(y_w|x)} - \beta \log \frac{\pi_{\theta}(y_l|x)}{\pi_{ref}(y_l|x)} \right) \right] $$
 
 
 * Multi-token training

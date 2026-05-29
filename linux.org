@@ -2,6 +2,20 @@
 :ID:       E679EB60-C52C-4489-8164-5892DE601136
 :END:
 #+TITLE: Linux
+#+STARTUP: overview
+* Configuration
+** ubuntu
+key swap mapping for GNOME map layer
+#+begin_src sh
+    gsettings set org.gnome.desktop.input-sources xkb-options "['altwin:swap_alt_win', 'ctrl:swapcaps']"
+    gsettings set org.gnome.desktop.input-sources xkb-options "['altwin:swap_lalt_lwin', 'ctrl:swapcaps']"
+    gsettings reset org.gnome.desktop.input-sources xkb-options
+#+end_src
+
+- 'altwin:swap_alt_win': in alt and win category do the action:: swap the alt and win, where win can be Option in MacOS style
+-  l only for left
+- 'ctrl:swapcaps': in ctal category do the action:: swap caps with ctrl
+
 * Install & Recovery
 ** ISO Installation
 |---------+------------------------|
