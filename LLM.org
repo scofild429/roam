@@ -1,0 +1,70 @@
+:PROPERTIES:
+:ID:       b1c8b071-5075-45a1-af42-8ab436510b96
+:END:
+#+TITLE: LLM Traning
+#+AUTHOR: Technical Discussion Notes
+#+OPTIONS: toc:nil num:t
+
+* Tokenizer
+:PROPERTIES:
+:ID:       f123b249-1c4c-4212-8be2-56c9b32d0a40
+:END:
+** The Mechanics of Tokenizer Training (BPE)
+
+Tokenizer training is a data-compression task that occurs completely independently of, and prior to, building the neural network.
+
+*** A. The Lifecycle of a Byte Pair Encoding (BPE) Run
+1. *Initialization:* A massive training corpus is ingested. The vocabulary starts at the absolute smallest atomic units (typically the 256 unique raw UTF-8 bytes).
+2. *Frequency Evaluation:* The training script loops through the corpus to count the most frequently appearing adjacent pairs (e.g., =t= + =h=).
+3. *Recursive Merge:* The most frequent pair is permanently merged into a single new entry (=th=) and added to the vocabulary list.
+4. *Termination:* This loop recurses continuously until a hardcoded vocabulary limit is reached (e.g., 6,400 for MiniMind, or 128,000 for Llama 3).
+
+*** B. Vocabulary Size vs. Tokenization Depth
+- *Small Vocabularies (e.g., 6,400):* The tokenizer has fewer long words stored in its dictionary. It is forced to split text "deeper" into tiny, highly fragmented fragments. This reduces the parameter size of the model's embedding/output layers but demands more tokens to represent a sentence.
+- *Large Vocabularies (e.g., 151,000):* The tokenizer can store complex words, phrases, and multi-byte characters as single tokens. It splits text less, resulting in fewer tokens per sentence and higher computational efficiency during inference.
+- *Data Dependency:* Two tokenizers with identical vocabulary lengths will have completely different mappings depending on their training corpus (e.g., English-centric, Code-centric, or Chinese-centric).
+
+** The Core Pipeline: From Text to LLM Input
+
+The transition from raw natural language to numerical representations that a Transformer can process follows a strict, decoupled pipeline.
+
+*** A. Step 1: Text-to-ID Mapping (CPU Space)
+- *Mechanism:* The input text string (e.g., ="I love Programming"=) is intercepted by a CPU-side pre-processor running a pre-compiled tokenizer map (e.g., derived from ~train_tokenizer.py~).
+- *BPE Output:* The string is parsed into subwords/characters and translated into a 1D vector of unique token integer IDs based on the static vocabulary index (e.g., =[23, 67, 45]=).
+- *Data Integrity:* Modern tokenizers utilize *Byte-Level BPE (BBPE)*. If a word or emoji is entirely missing from the vocabulary, it falls back to raw UTF-8 bytes (0-255). This guarantees that *no text is ever unidentified or dropped* (eliminating the old =<UNK>= tokens).
+
+*** B. Step 2: ID-to-Vector Layer Lookup (GPU Space)
+- *Mechanism:* The integer vector =[23, 67, 45]= enters the model's *Embedding Layer* (~embed_tokens~). 
+- *The Matrix Structure:* The embedding layer is a massive 2D lookup table of shape:
+  $$\text{Shape} = [\text{Vocab Size}, \text{Hidden Dimension}]$$
+  For example, a vocabulary size of 64,000 and a hidden width of 4,096 yields a matrix of shape =[64000, 4096]=.
+- *Tensor Assembly:* The layer performs a fast programmatic row-lookup matching the indices. Instead of concatenating these vectors horizontally, it **stacks them vertically**.
+- *Resulting Tensor:* It produces a 2D float tensor of shape =[Sequence Length, Hidden Dimension]= (e.g., =[3, 4096]=), representing the token features sequentially.
+
+*** C. Step 3: LLM Ingestion & Variable Sequence Lengths
+- *The Mathematical Trick:* Traditional deep learning models require fixed-size inputs. LLMs bypass this limitation via *Matrix Multiplication Broadcasting*.
+- *The Formula:* When the input matrix passes into the first dense weight layers of the Transformer (which have a fixed shape of =[4096, 4096]=), the mathematical dot product preserves the sequence dimension ($N$):
+  $$[N, 4096] \times [4096, 4096] = [N, 4096]$$
+- *Flexibility:* The LLM is structurally rigid on its *width* (4096), but completely infinite and flexible on its *height/length* ($N$).
+
+** Lifecycle of the Embedding Layer Across LLM Training Phases
+
+The exact same physical weight matrix (~embed_tokens~) persists through every single downstream training phase, but its training status changes dramatically.
+
+| Training Phase  | Layer Status | Modification Type & Mechanism                                                                                                                   |
+|-----------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1. Pre-Training | **Active**   | Fully unfrozen. Initialized as pure random floating-point noise. Learns base semantics via backpropagation over trillions of tokens.            |
+| 2. Continued PT | **Active**   | Semi-unfrozen. Often undergoes "Embedding Surgery" where new rows are appended to the matrix to accommodate new languages or characters.        |
+| 3. SFT          | *Frozen*     | Locked behind glass. Fine-tuning switches to Parameter-Efficient methods (like LoRA) targeting internal attention layers to adjust tone/format. |
+| 4. RLHF / DPO   | *Frozen*     | Strictly locked down. Freezing prevents "Reward Hacking" and safeguards against catastrophic forgetting of core vocabulary.                     |
+
+*** A. How the Backward Pass Updates the Embedding Matrix (The Scatter Mechanism)
+- *The Problem:* If a forward pass only calls 3 tokens out of 64,000, how does backpropagation know which rows to modify?
+- *The Mechanism:* The framework's automatic differentiation engine utilizes a **Sparse Gradient Update** (conceptually mapped via programmatic operations like ~scatter_add_~).
+- *Row-Level Routing:* The gradient tensor returning from the LLM has an identical shape to the input tensor (=[3, 4096]=). The engine reads its execution log, identifies the precise token indices used (e.g., =23, 67, 45=), and adds the incoming gradients *only* to those exact rows:
+  #+BEGIN_SRC python
+  embedding_matrix.grad[23] += incoming_gradient[0]
+  embedding_matrix.grad[67] += incoming_gradient[1]
+  embedding_matrix.grad[45] += incoming_gradient[2]
+  #+END_SRC
+- *Efficiency:* The remaining 63,997 uncalled rows in the embedding matrix receive an update value of exactly =0.0=, ensuring their historical semantic weights remain perfectly preserved until they are explicitly called in a future batch.
