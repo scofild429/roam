@@ -66,6 +66,315 @@ The exact same physical weight matrix (~embed_tokens~) persists through every si
   #+END_SRC
 - *Efficiency:* The remaining 63,997 uncalled rows in the embedding matrix receive an update value of exactly =0.0=, ensuring their historical semantic weights remain perfectly preserved until they are explicitly called in a future batch.
 
+* Hidden dimension Vs. embedding dimension
+
+In the architectural design of Large Language Models (LLMs), the relationship between the *Hidden Dimension* (often denoted as $d_{model}$ or $h$) and the *Embedding Dimension* (often denoted as $d_{emb}$) can be summarized in one sentence: In mainstream standard Transformer models (like the LLaMA and GPT series), they are typically strictly equal ($d_{model} = d_{emb}$); however, in architectures pursuing parameter optimization or specific system designs, they are intentionally decoupled ($d_{model} > d_{emb}$). Although they often share the same variable name in many engineering implementations, they carry entirely distinct physical meanings from the perspectives of deep learning logic and system computation.
+
+** 1. Fundamental Conceptual Differences
+- *Embedding Dimension ($d_{emb}$):* This is the feature representation at the "input layer" of the model. It determines the information capacity when each token in the vocabulary (such as subwords segmented by BPE or Tiktoken) is mapped into a continuous vector space. The shape of the corresponding Embedding matrix is $|V| \times d_{emb}$, where $|V|$ is the vocabulary size.
+- *Hidden Dimension ($d_{model}$):* This is the processing bandwidth at the "intermediate layers" of the model. It determines the vector length used inside the Transformer Blocks (including the Self-Attention layers and Feed-Forward Network layers) when performing multidimensional feature extraction, information fusion, and attention weight computation.
+
+** 2. Why Are They Typically Equal in Mainstream Models?
+In the original Transformer architecture (and the vast majority of mainstream LLMs that followed), designers defaulted to $d_{model} = d_{emb}$. This is primarily driven by the following two architectural constraints:
+
+*** A. Requirements of Residual Connections
+Transformers heavily rely on residual connections to mitigate the vanishing gradient problem. The core formula is:
+$$x_{out} = x_{in} + \text{Sublayer}(x_{in})$$
+For the addition operation to be performed directly, the dimension of the input vector $x_{in}$ (coming from the Embedding layer or the previous layer) must be exactly identical to the dimension of the output from the Attention or MLP sublayers. If they were different, an additional linear projection matrix would have to be introduced before every residual addition, which would significantly increase the communication and computation overhead of Matrix Multiplication (GEMM).
+
+*** B. Weight Tying
+When training language models, it is common to share the same weight parameters between the Embedding matrix at the input layer and the Pre-Softmax linear projection matrix at the output layer (i.e., $W_{in} = W_{out}^T$). This design not only substantially reduces the number of parameters but also leverages the gradients during the decoding process to directly update the word embeddings. To implement this matrix transposition and reuse, $d_{emb}$ must perfectly match the $d_{model}$ output by the final layer of the Transformer.
+
+** 3. Decoupled Design: When $d_{emb} \neq d_{model}$
+As model sizes scale up, forcing $d_{emb} = d_{model}$ introduces severe parameter redundancy and VRAM bottlenecks. The vocabulary size $|V|$ is usually between $30,000$ and $128,000$ (or even larger). If the hidden dimension $d_{model}$ is expanded to a very large number (for instance, $12288$ in GPT-3), the parameter count for the Embedding layer alone would reach:
+$$128,000 \times 12288 \approx 1.57 \times 10^9 \text{ parameters}$$
+
+*Factorized Embedding Parameterization*
+This technique (widely used in models like ALBERT) decouples the two dimensions, enforcing $d_{emb} \ll d_{model}$. The system introduces an intermediate projection matrix $E_{proj}$ to break down the original one-step mapping into two steps:
+1. First, map the one-hot vector into a lower-dimensional Embedding space: $E_{in} \in \mathbb{R}^{|V| \times d_{emb}}$
+2. Then, project it into the high-dimensional hidden space via a linear transformation: $E_{proj} \in \mathbb{R}^{d_{emb} \times d_{model}}$
+
+With this approach, the parameter count drops precipitously from $O(|V| \times d_{model})$ to $O(|V| \times d_{emb} + d_{emb} \times d_{model})$. 
+This decoupling is logically very consistent: the context-independent representation of words (Embedding) does not require an extremely high dimension, because the static semantics of a single word are relatively limited; conversely, the context-dependent representations (Hidden States) require extremely high dimensions, as they must encode complex grammar, semantics, and reasoning logic across long contexts.
+
+** 4. System-Level (HPC) Considerations for Training and Inference
+From the perspective of High-Performance Computing (HPC) and memory hierarchies, the difference between these two layers has a decisive impact on compute allocation:
+
+- *The Embedding Layer is Memory-Bandwidth Bound:* Word vector lookup is inherently a sparse memory read operation (Gather) and does not involve dense floating-point operations. A massive $d_{emb}$ directly leads to extremely high cache miss rates and VRAM bus pressure. Particularly in distributed training environments (such as multi-node training on Kubernetes clusters), giant Embedding tables usually require Tensor Parallelism splitting, which incurs additional All-Reduce communication overhead.
+- *The Hidden Layer is Compute Bound:* The operations based on $d_{model}$ within Transformer Blocks are dense matrix multiplications (with a complexity of $O(d_{model}^2)$). Modern GPUs and AI accelerators are heavily optimized for large-scale dense matrix multiplications. Increasing $d_{model}$ can more effectively saturate the compute capacity (improving FLOPs utilization).
+
+* Position
+:PROPERTIES:
+:ID:       07364BC0-33F0-4FE2-9BA7-FA73E9A8A769
+:END:
+** Problem
+
+*** 1. 核心痛点：Transformer 是天生的“词袋”
+没有位置编码的 Transformer 存在一个致命的数学缺陷——排列等变性（Permutation Equivariance）。
+自注意力机制本质上是对上下文进行无序的“加权求和”。这就导致输入“熊猫吃竹子”和“竹子吃熊猫”时，模型看到的仅仅是包含这三个词的无向图。
+
+*** 2. 数学本质：同步置换（0差异）
+当输入词序被打乱时，模型的输出矩阵只是在行顺序上做了对应的同步置换，但每一个词提取到的特征向量在数值上是 100% 相等的。
+- 对“吃”这个词来说，它无法通过特征向量知道自己左边是主语还是右边是主语。
+- 这种差异并非“常数差异”，而是毫无差异。在模型眼中，它只是一堆词汇的共现（Co-occurrence），没有语法，没有时间先后。
+
+*** 3. 全阶段失效：贯穿模型生命周期的灾难
+这种“词汇盲盒”现象会导致模型在没有任何位置约束的情况下，在所有训练和推理阶段全面失效：
+- 掩码预训练（MLM/BERT）： 上下文打乱后，预测中间遮挡词的概率分布完全不变。
+- 因果自回归（GPT/SFT/推理）： 只要面对相同的“可见历史词汇集合”，无论内部顺序如何，预测下一个词的结果完全一样。
+- 强化学习（RL/RM）： 奖励模型对“人类战胜AI”和“AI战胜人类”这两个词汇相同但逻辑相反的句子，会给出绝对相等的 Reward 分数，导致梯度混乱。
+
+*** 一句话总结：
+没有位置编码，Transformer 就只是一个瞎摸词块的盲盒；引入位置编码（如RoPE强行注入坐标时间戳），才打破了这种对称性，赋予了模型理解“秩序”和“逻辑”的灵魂。
+
+** 核心细节：维度与高低频的精妙分工
+假设一个词向量有 512 维。模型不是用同一个波来记录位置，而是把这 512 个维度（抽屉）分配给了不同频率的波：
+
+*** 低维度（例如第 0, 1, 2 维）：使用高频波
+- 用法： 这里使用的是周期极短的正弦/余弦波。位置只要往后挪动 1 步，算出来的数值就会发生剧烈跳变（比如从 0.8 瞬间变成 -0.9）。
+- 物理意义（秒针）： 赋予模型极高的局部微观分辨率。这让模型能够极其敏锐地察觉到“这两个词是紧挨着的”，从而精准区分局部的语法关系（如主谓宾连缀）。
+
+*** 高维度（例如第 510, 511 维）：使用低频波
+- 用法： 这里使用的是周期极长、极其平缓的波。位置挪动 1 步，数值几乎毫无变化；只有跨越几十上百个词，数值才会有可见的改变。
+- 物理意义（时针）： 赋予模型全局宏观定位能力。即使高频波像秒针一样转了几百圈已经乱套了，模型依然能通过低频波判断出“这个词大致在文章的开头，那个词在文章的末尾”。
+** 发展历程
+*** 第一阶段：原初的固定公式（Transformer 2017）
+- 做法：正弦/余弦绝对位置编码（Sinusoidal PE）。使用一套写死的数学公式，生成位置向量，加到词向量上。
+- 当时的理由：Transformer 刚刚被发明，作者为了打破“词袋诅咒”，需要一个能表达位置的信号。选择三角函数是因为它能表示无限的长度，且值域永远在 $[-1, 1]$ 之间，不会因为句子太长而导致数值爆炸。
+- 为什么被放弃？早期的研究者发现，虽然公式很优雅，但在当时的短文本评测任务（如机器翻译）中，“写死的公式”表现并没有比“让模型自己学”更好。
+
+*** 第二阶段：迷信算力的“可学习”时代（BERT、GPT-1/2/3）
+- 做法：可学习的绝对位置编码（Learned Absolute PE）。研究人员抛弃了三角函数，直接初始化一个参数矩阵（比如 $2048 \times 768$）。第 1 个词加第 1 个随机向量，第 100 个词加第 100 个随机向量，让反向传播自己去更新它们。
+- 转换的理由：当时的深度学习有一种“万物皆可学”的信仰。既然词语的含义（Embedding）可以由模型在海量数据中自己学出来，凭什么位置信息要人类用数学公式硬性规定？事实证明，在固定长度的 Benchmark 上，可学习 PE 确实能榨取稍微高一点的准确率。
+- 致命危机爆发：零外推能力（Zero Extrapolation）。随着 GPT-3 的出现，大家发现不对劲了。这种方法把模型的“视力”锁死了。如果训练时准备了 2048 个位置的向量，当用户输入第 2049 个词时，模型去查表，拿到的是一个未经任何训练的初始随机噪声。结果就是输出瞬间乱码。为了让模型支持 4096 长度，科技巨头们只能重新初始化一个更大的矩阵，从头开始烧钱训练。
+
+*** 第三阶段：认知的觉醒 —— “相对距离”才是语言的本质
+在可学习绝对 PE 碰壁后，语言学的一个核心常识被重新重视：平移不变性（Translation Invariance）。
+- 核心反思：人类在阅读时，根本不关心“我”这个字在全书的绝对位置是第 1 个还是第 10001 个。我们在乎的是，“我”在“爱”的前面 1 个位置。有意义的不是绝对坐标，而是相对距离。
+- 过渡期解法：相对位置编码（如 T5、ALBERT、DeBERTa）。研究者开始直接在 Attention 的计算公式里打补丁。当词 $i$ 关注词 $j$ 时，直接把它们的距离 $(i-j)$ 算出来，映射成一个偏置（Bias）加到注意力分数里。
+- 为什么没有一统天下？（工程灾难）：相对位置编码在理论上非常完美，但在工程计算上极其丑陋。它破坏了 Transformer 原本可以高度并行化的矩阵乘法运算（FlashAttention 等底层算子很难对它进行极致优化），导致模型训练和推理速度大打折扣。
+
+*** 第四阶段：伟大的综合 —— RoPE（旋转位置编码，2021 至今）
+此时，大语言模型陷入了一个不可能三角：
+1. 我们想要绝对位置的计算效率（直接在输入端处理，不影响底层 Attention 的矩阵乘法）。
+2. 我们想要相对位置的表达能力（符合人类语言逻辑）。
+3. 我们想要无尽的外推潜力（不能像“可学习参数”那样被长度锁死）。
+
+RoPE (Rotary Position Embedding) 的出现，用一种极其优雅的数学几何方法，同时满足了这三点。
+- 它的做法（回归“不学习”的数学）：它彻底抛弃了“可学习”的路线，回归了第一阶段的固定数学公式。但它不再是把位置向量“加”到词向量上，而是用位置 $m$ 乘以一个频率 $\theta$，构造一个旋转矩阵，去“旋转”词向量。
+- 为什么它赢得了时代？
+  - 输入端注入绝对位置：第 $m$ 个词旋转 $m\cdot\theta$ 度，第 $n$ 个词旋转 $n\cdot\theta$ 度。计算效率极高。
+  - Attention 计算自然浮现相对距离：当计算点积（内积）时，根据三角函数公式，两个旋转后的向量的夹角恰好是 $(m-n)\cdot\theta$。模型在底层算力上做的是绝对位置的运算，但在高层语义上感受到的却是相对距离。
+  - 完美的外推基础：因为它是纯固定的数学公式（没有任何可训练的位置参数），只要修改公式里的基频（也就是我们前面讨论的 YaRN 和 NTK-Aware 插值技术），就能不花一分钱算力，将模型的认知长度从 4K 暴涨到 128K 甚至 1M。
+
+** RoPE
+RoPE（旋转位置编码，Rotary Position Embedding）是目前大语言模型（如 LLaMA, Qwen, Mistral 等）事实上的位置编码标准。它的出现完美解决了 Transformer 架构中绝对位置计算效率与相对位置语义表达之间的矛盾。以下是对 RoPE 的数学原理、工程实现及其突出优势的结构化总结。
+
+*** 一、 数学原理：用绝对旋转表达相对距离
+RoPE 的根本目标是寻找一个位置编码函数 $f$，使得两个注入了绝对位置信息的词向量，其内积（Attention 的计算核心）仅与它们的相对位置有关：
+$$\langle f(\mathbf{q}, m), f(\mathbf{k}, n) \rangle = g(\mathbf{q}, \mathbf{k}, m-n)$$
+
+**** 1. 二维空间的复数推导（欧拉公式的绝佳应用）
+在二维空间中，我们将 Query 向量 $\mathbf{q} = (q_0, q_1)$ 映射为复数 $\tilde{q} = q_0 + iq_1$。RoPE 将位置信息 $m$ 转化为一个旋转角度 $m\theta$，通过乘以复平面上的旋转因子 $e^{im\theta}$ 来注入绝对位置：
+$$f(\mathbf{q}, m) = \tilde{q} e^{im\theta}$$
+$$f(\mathbf{k}, n) = \tilde{k} e^{in\theta}$$
+计算这两个复向量的内积（即取 $\tilde{q} (\tilde{k})^*$ 的实部）：
+$$\text{Re}[ (\tilde{q} e^{im\theta}) (\tilde{k} e^{in\theta})^* ] = \text{Re}[ \tilde{q} \tilde{k}^* e^{i(m-n)\theta} ]$$
+在这个结果中，绝对位置 $m$ 和 $n$ 已经解耦，被完全转化为相对位置 $(m-n)$。
+
+**** 2. 推广到多维空间（分块对角矩阵）
+对于隐层维度为 $d$ 的向量（$d$ 必须为偶数），RoPE 将其两两分组，划分为 $d/2$ 个二维子空间。每个子空间分配一个不同的基础频率（Base Frequency）$\theta_i$。在数学形式上，这等价于对输入向量乘以一个稀疏的分块对角旋转矩阵 $R_{\Theta, m}$：
+$$R_{\Theta, m} = \text{diag}\left( \begin{pmatrix} \cos m\theta_0 & -\sin m\theta_0 \\ \sin m\theta_0 & \cos m\theta_0 \end{pmatrix}, \dots, \begin{pmatrix} \cos m\theta_{d/2-1} & -\sin m\theta_{d/2-1} \\ \sin m\theta_{d/2-1} & \cos m\theta_{d/2-1} \end{pmatrix} \right)$$
+其中，每一组维度的频率计算公式为：
+$$\theta_i = b^{-2i/d}, \quad i \in \{0, 1, \dots, d/2-1\}$$
+传统上，基频 $b$ 默认为 $10000$。
+
+*** 二、 实现方法：极致稀疏化与逐元素并行
+如果直接进行矩阵乘法 $R_{\Theta, m} \mathbf{x}$，时间复杂度将是 $O(d^2)$。但在现代深度学习框架中，RoPE 利用了该矩阵极度稀疏的特性，将其转化为时间复杂度仅为 $O(d)$ 的逐元素（Element-wise）操作。对于输入向量 $\mathbf{x} = [x_0, x_1, \dots, x_{d-1}]$：
+
+**** 1. 向量重排（交错取反）
+定义一个辅助函数 =rotate_half=，将相邻维度的元素交换并对前半部分取反：
+$$\text{rotate\_half}(\mathbf{x}) = [-x_1, x_0, -x_3, x_2, \dots, -x_{d-1}, x_{d-2}]$$
+
+**** 2. 逐元素乘加（Element-wise Operations）
+将原本的矩阵乘法等价展开为：
+$$f(\mathbf{x}, m) = \mathbf{x} \odot \cos(m\Theta) + \text{rotate\_half}(\mathbf{x}) \odot \sin(m\Theta)$$
+(注：$\odot$ 为 Hadamard 乘积，即逐元素相乘)
+
+**** 3. 张量广播并行（Broadcasting）
+在工程代码（如 PyTorch）中，我们会预先计算好最大序列长度下的 =cos_cached= 和 =sin_cached= 张量。在 Forward pass 时，利用框架的 Broadcasting 机制，可以在一个时钟周期内对整个 Batch、所有 Attention Heads 以及所有 Sequence Tokens 同时完成旋转操作。这完美兼容并支持了 FlashAttention 等底层算子融合技术。
+
+*** 三、 突出优势与外推基频（Base Frequency Extrapolation）
+RoPE 能够一统天下的原因在于它同时打破了计算效率和长度泛化能力的物理限制。
+
+- 优势 1：计算效率与语义表达的完美统一
+  模型在输入端执行的是绝对位置的计算（加法与逐元素乘法，速度极快且天然适合并行），但在 Attention 层面上，计算结果自然呈现出严格的相对位置衰减（距离越远，内积的期望值越趋近于零），这高度符合人类语言中“局部依赖性强”的先验直觉。
+- 优势 2：参数零负担
+  RoPE 是纯粹的数学变换，没有任何需要通过反向传播更新的参数（可学习的 PE 会占用显存并增加梯度计算）。
+- 优势 3：通过“外延基频”实现无缝上下文窗口扩展
+  这是 RoPE 在大模型时代最不可替代的优势。当模型需要处理超过其训练长度（例如从 4K 扩展到 128K）的文本时，传统的 PE 会因为遭遇未初始化的随机向量或无法解析的极小 Attention 分数而崩溃。而 RoPE 只需要修改其外延基频（Base Frequency $b$）。
+
+在基频公式 $\theta_i = b^{-2i/d}$ 中：
+- 物理意义：$b$ 决定了位置编码在各个维度上的“波长”。波长越长，旋转相同角度需要跨越的绝对位置距离就越大。
+- 外推危机：如果 $m$ 极大（远超训练长度），$m\theta_i$ 的角度会超出模型训练时见过的分布，导致语义匹配混乱。
+- 修改基频（RoPE Base Scaling / NTK-Aware）：如果我们将 $b$ 从 $10000$ 放大到 $500000$ 甚至 $1000000$（如 LLaMA-2 Long 或 CodeLlama 的做法），会导致 $\theta_i$ 整体变小。
+  - 对于高频维度（较小的 $i$），波长本身很短，受到 $b$ 放大的影响较小，模型依然能精准分辨相邻词语（局部相对位置不变）。
+  - 对于低频维度（较大的 $i$），波长被大幅拉长。原本在 128K 长度下会超出范围的巨大旋转角度，被重新“压缩”到了模型熟悉的 $0 \sim 2\pi$ 周期内。
+- 结论：仅仅通过将基频常数调大（不需要改变模型结构），配合极少量的长文本微调（甚至零微调），就能让模型在底层数学逻辑上将更长上下文的旋转刻度映射回其已有的认知区间内，实现了以极低算力成本达成数倍甚至数十倍的上下文窗口扩展。
+* Flash Attention
+:PROPERTIES:
+:ID:       64FD034D-BF19-4737-9BA4-AB473346A338
+:END:
+** Normal Softmax
+#+begin_src python :exports both :results output
+  import torch
+  X = torch.tensor([-0.3, 0.2, 0.5, 0.7, 0.1, 0.8])
+  X_exp_sum = X.exp().sum()
+  X_softmax_hand = torch.exp(X) / X_exp_sum
+  print(X_softmax_hand)
+#+end_src
+
+#+RESULTS:
+: tensor([0.0827, 0.1364, 0.1841, 0.2249, 0.1234, 0.2485])
+
+** Safe Softmax
+#+begin_src python :exports both :results output
+  import torch
+  X = torch.tensor([-0.3, 0.2, 0.5, 0.7, 0.1, 0.8])
+  X_max = X.max()
+  X_exp_sum_sub_max = torch.exp(X-X_max).sum()
+  X_safe_softmax_hand = torch.exp(X - X_max) / X_exp_sum_sub_max
+  print(X_safe_softmax_hand)
+#+end_src
+
+#+RESULTS:
+: tensor([0.0827, 0.1364, 0.1841, 0.2249, 0.1234, 0.2485])
+
+** Online Softmax
+#+begin_src python :exports both :results output
+  import torch
+  X = torch.tensor([-0.3, 0.2, 0.5, 0.7, 0.1, 0.8])
+  X_pre = X[:-1]
+  print('input x')
+  print(X)
+  print(X_pre)
+  print(X[-1])
+
+  # we calculative t-1 time Online Softmax
+  X_max_pre = X_pre.max()
+  X_sum_pre = torch.exp(X_pre - X_max_pre).sum()
+
+  # we calculative t time Online Softmax
+  X_max_cur = torch.max(X_max_pre, X[-1]) # X[-1] is new data
+  X_sum_cur = X_sum_pre * torch.exp(X_max_pre - X_max_cur) + torch.exp(X[-1] - X_max_cur)
+
+  # final we calculative online softmax
+  X_online_softmax = torch.exp(X - X_max_cur) / X_sum_cur
+  print('online softmax result: ', X_online_softmax)
+#+end_src
+
+#+RESULTS:
+: input x
+: tensor([-0.3000,  0.2000,  0.5000,  0.7000,  0.1000,  0.8000])
+: tensor([-0.3000,  0.2000,  0.5000,  0.7000,  0.1000])
+: tensor(0.8000)
+: online softmax result:  tensor([0.0827, 0.1364, 0.1841, 0.2249, 0.1234, 0.2485])
+
+** block online softmax
+#+begin_src python  :exports both :results output
+  import torch
+  X = torch.tensor([-0.3, 0.2, 0.5, 0.7, 0.1, 0.8])
+  X_block = torch.split(X, split_size_or_sections = 3 , dim = 0) 
+  print(X)
+  print(X_block)
+
+  # we parallel calculate  different block max & sum
+  X_block_0_max = X_block[0].max()
+  X_block_0_sum = torch.exp(X_block[0] - X_block_0_max).sum()
+
+  X_block_1_max = X_block[1].max()
+  X_block_1_sum = torch.exp(X_block[1] - X_block_1_max).sum()
+
+  # online block update max & sum
+  X_block_1_max_update = torch.max(X_block_0_max, X_block_1_max) # X[-1] is new data
+  X_block_1_sum_update = X_block_0_sum * torch.exp(X_block_0_max - X_block_1_max_update) \
+      + torch.exp(X_block[1] - X_block_1_max_update).sum() # block sum
+
+  X_block_online_softmax = torch.exp(X - X_block_1_max_update) / X_block_1_sum_update
+  print(X_block_online_softmax)
+
+#+end_src
+
+#+RESULTS:
+: tensor([-0.3000,  0.2000,  0.5000,  0.7000,  0.1000,  0.8000])
+: (tensor([-0.3000,  0.2000,  0.5000]), tensor([0.7000, 0.1000, 0.8000]))
+: tensor([0.0827, 0.1364, 0.1841, 0.2249, 0.1234, 0.2485])
+
+** batch online softmax
+
+#+begin_src python  :exports both :results output
+  import torch
+  torch.manual_seed(42)
+  X_batch = torch.randn(4, 6)
+  _, d = X_batch.shape
+
+  X_batch_block_0 = X_batch[:, :d//2]
+  X_batch_block_1 = X_batch[:, d//2:]
+
+  # we parallel calculate  different block max & sum
+  X_batch_0_max, _ = X_batch_block_0.max(dim = 1, keepdim = True)
+  X_batch_0_sum = torch.exp(X_batch_block_0 - X_batch_0_max).sum(dim = 1, keepdim = True)
+
+  X_batch_1_max, _ = X_batch_block_1.max(dim = 1, keepdim = True)
+  X_batch_1_sum = torch.exp(X_batch_block_1 - X_batch_1_max).sum(dim = 1, keepdim = True)
+
+  # online batch block update max & sum
+  X_batch_1_max_update = torch.maximum(X_batch_0_max, X_batch_1_max) # 逐个元素找最大值
+  X_batch_1_sum_update = X_batch_0_sum * torch.exp(X_batch_0_max - X_batch_1_max_update) \
+      + torch.exp(X_batch_block_1 - X_batch_1_max_update).sum(dim = 1, keepdim = True) # block sum
+
+  X_batch_online_softmax = torch.exp(X_batch - X_batch_1_max_update) / X_batch_1_sum_update
+  print(X_batch_online_softmax)
+  #+end_src
+
+  #+RESULTS:
+  : tensor([[0.4256, 0.2742, 0.1525, 0.0075, 0.1221, 0.0180],
+  :         [0.1926, 0.0404, 0.2870, 0.1012, 0.1228, 0.2560],
+  :         [0.0881, 0.2934, 0.0264, 0.2155, 0.1964, 0.1802],
+  :         [0.3666, 0.0882, 0.0908, 0.1541, 0.0717, 0.2286]])
+
+
+  #+begin_src python  :exports both :results output
+    import torch
+    torch.manual_seed(42)
+    X_batch = torch.randn(4, 6)
+    _, d = X_batch.shape
+
+    X_batch_block_0 = X_batch[:, :d//2]
+    X_batch_block_1 = X_batch[:, d//2:]
+
+    # we parallel calculate  different block max & sum
+    X_batch_0_max, _ = X_batch_block_0.max(dim = 1, keepdim = True)
+    X_batch_0_sum = torch.exp(X_batch_block_0 - X_batch_0_max).sum(dim = 1, keepdim = True)
+
+    X_batch_1_max, _ = X_batch_block_1.max(dim = 1, keepdim = True)
+    X_batch_1_sum = torch.exp(X_batch_block_1 - X_batch_1_max).sum(dim = 1, keepdim = True)
+
+    # online batch block update max & sum
+    X_batch_1_max_update = torch.maximum(X_batch_0_max, X_batch_1_max) # 逐个元素找最大值
+    X_batch_1_sum_update = X_batch_0_sum * torch.exp(X_batch_0_max - X_batch_1_max_update) \
+                                           + X_batch_1_sum * torch.exp(X_batch_1_max - X_batch_1_max_update) 
+
+    X_batch_online_softmax = torch.exp(X_batch - X_batch_1_max_update) / X_batch_1_sum_update
+    print(X_batch_online_softmax)
+  #+end_src
+
+  #+RESULTS:
+  : tensor([[0.4256, 0.2742, 0.1525, 0.0075, 0.1221, 0.0180],
+  :         [0.1926, 0.0404, 0.2870, 0.1012, 0.1228, 0.2560],
+  :         [0.0881, 0.2934, 0.0264, 0.2155, 0.1964, 0.1802],
+  :         [0.3666, 0.0882, 0.0908, 0.1541, 0.0717, 0.2286]])
+
 * DPO
 :PROPERTIES:
 :ID:       66ec81c0-f137-4b6e-a12a-d8f2fc4303f4
